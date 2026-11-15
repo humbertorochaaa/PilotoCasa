@@ -97,6 +97,7 @@ html.mobile-device #uploadReceiptButton, html.mobile-device #receiptUploadInput 
 .section-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin: 32px 0 14px; }
 .section-heading h2 { margin: 5px 0 0; font: 700 17px Manrope, sans-serif; letter-spacing: -.35px; }
 .month-tag { padding: 6px 9px; border: 1px solid #e5e9e2; border-radius: 6px; color: #738077; background: #fbfcf9; font-size: 9px; }
+.month-tag { max-width: 190px; cursor: pointer; }
 .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
 .stat-card { min-height: 126px; padding: 16px 17px 13px; border: 1px solid #eaede8; border-radius: 12px; background: white; box-shadow: var(--shadow); }
 .stat-top { display: flex; justify-content: space-between; align-items: center; }
