@@ -601,7 +601,7 @@
   }
 
   async function openScanner() {
-    $("#scannerMessage").textContent = "Afaste a câmera para mostrar a nota toda e mantenha o QR code visível.";
+    $("#scannerMessage").textContent = "Aponte para o QR code. Para ler os itens, escolha depois uma foto nítida da nota inteira.";
     $("#scannerPlaceholder").classList.remove("hidden");
     $("#scannerDialog").showModal();
   }
@@ -626,7 +626,7 @@
       video.srcObject = scanStream;
       await video.play();
       $("#scannerPlaceholder").classList.add("hidden");
-      message.textContent = "Enquadre a nota inteira, com o QR visível, para ler também os produtos.";
+      message.textContent = "Aponte para o QR code. Depois, use Usar foto para reconhecer mercado e produtos.";
       scanActive = true;
       lastScanAt = 0;
       scanFrame = requestAnimationFrame(scanLoop);
@@ -649,7 +649,7 @@
     }
     scanFrame = requestAnimationFrame(scanLoop);
   }
-  async function decodeImageSource(source) {
+  async function decodeImageDetails(source) {
     const width = source.videoWidth || source.naturalWidth || source.width;
     const height = source.videoHeight || source.naturalHeight || source.height;
     if (!width || !height || !scanContext) return null;
@@ -660,62 +660,82 @@
     if (window.jsQR) {
       const imageData = scanContext.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
       const result = window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-      if (result?.data) return result.data;
+      if (result?.data) {
+        const corners = [result.location.topLeftCorner, result.location.topRightCorner, result.location.bottomLeftCorner, result.location.bottomRightCorner];
+        const xs = corners.map((point) => point.x / scale);
+        const ys = corners.map((point) => point.y / scale);
+        return {
+          value: result.data,
+          rectangle: { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) }
+        };
+      }
     }
     if (barcodeDetector) {
       const results = await barcodeDetector.detect(scanCanvas);
-      if (results.length) return results[0].rawValue;
+      if (results.length) {
+        const box = results[0].boundingBox;
+        return {
+          value: results[0].rawValue,
+          rectangle: box ? { left: box.x / scale, top: box.y / scale, right: (box.x + box.width) / scale, bottom: (box.y + box.height) / scale } : null
+        };
+      }
     }
     return null;
   }
-  function captureScannerFrame(video) {
-    const width = video?.videoWidth || 0;
-    const height = video?.videoHeight || 0;
-    if (!width || !height) return null;
-    const scale = Math.min(1, 2400 / Math.max(width, height));
+  async function decodeImageSource(source) {
+    return (await decodeImageDetails(source))?.value || null;
+  }
+  function prepareReceiptCanvas(source, qrRectangle) {
+    const sourceWidth = source.width;
+    const sourceHeight = source.height;
+    let crop = { left: 0, top: 0, right: sourceWidth, bottom: sourceHeight };
+    if (qrRectangle) {
+      const qrWidth = qrRectangle.right - qrRectangle.left;
+      const qrHeight = qrRectangle.bottom - qrRectangle.top;
+      if (qrWidth > 12 && qrHeight > 12) {
+        const qrCenter = (qrRectangle.left + qrRectangle.right) / 2;
+        const qrIsLeft = qrCenter < sourceWidth * 0.5;
+        const leftPadding = qrWidth * (qrIsLeft ? 0.65 : 1.9);
+        const rightPadding = qrWidth * (qrIsLeft ? 1.9 : 0.65);
+        const verticalPadding = qrHeight * 5.8;
+        const candidate = {
+          left: Math.max(0, qrRectangle.left - leftPadding),
+          top: Math.max(0, qrRectangle.top - verticalPadding),
+          right: Math.min(sourceWidth, qrRectangle.right + rightPadding),
+          bottom: Math.min(sourceHeight, qrRectangle.bottom + verticalPadding)
+        };
+        if (candidate.right - candidate.left >= sourceWidth * 0.3 && candidate.bottom - candidate.top >= sourceHeight * 0.35) crop = candidate;
+      }
+    }
+    const cropWidth = crop.right - crop.left;
+    const cropHeight = crop.bottom - crop.top;
+    const scale = Math.min(3, 3000 / Math.max(cropWidth, cropHeight));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
+    canvas.width = Math.max(1, Math.round(cropWidth * scale));
+    canvas.height = Math.max(1, Math.round(cropHeight * scale));
     const context = canvas.getContext("2d", { willReadFrequently: true });
     if (!context) return null;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(source, crop.left, crop.top, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+      const enhanced = Math.max(0, Math.min(255, (gray - 72) * 1.42 + 20));
+      pixels[index] = enhanced;
+      pixels[index + 1] = enhanced;
+      pixels[index + 2] = enhanced;
+    }
+    context.putImageData(imageData, 0, 0);
     return canvas;
   }
-  async function onQrRead(value) {
-    const frame = captureScannerFrame($("#scannerVideo"));
+  function onQrRead(value) {
     stopScanner();
     $("#scannerDialog").close();
     applyQrValue(value);
-    if (!frame) {
-      setProcessing(100, "QR lido. Use Usar foto para reconhecer o nome do mercado e os produtos.", "QR reconhecido", true);
-      return;
-    }
-    let highestProgress = 15;
-    try {
-      setProcessing(highestProgress, "QR lido. Lendo a nota inteira…", "Reconhecendo a nota");
-      const worker = await getOcrWorker((message) => {
-        highestProgress = Math.max(highestProgress, ocrProgressPercent(message));
-        setProcessing(highestProgress, ocrProgressLabel(message), "Reconhecendo a nota");
-      });
-      const result = await worker.recognize(frame);
-      const parsed = applyOcrReceipt(result.data.text, value);
-      if (parsed.itemsApplied) {
-        const itemSummary = parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount} itens` : `${parsed.items.length} produtos`;
-        const storeSummary = parsed.storeTrusted && parsed.store ? `Mercado: ${parsed.store}.` : "Mercado não reconhecido.";
-        setProcessing(100, `${itemSummary} identificados. ${storeSummary} Confira tudo antes de salvar.`, "Leitura concluída");
-        showToast(`${itemSummary} reconhecidos. Confira os dados da nota.`);
-      } else {
-        setProcessing(100, "O QR foi lido, mas o quadro da câmera não ficou nítido para reconhecer a nota toda. Toque em Usar foto e escolha uma foto de perto, com a tabela inteira visível.", "Foto necessária para ler os itens", true);
-        showToast("Não consegui confirmar os produtos. Use Usar foto com a nota inteira e nítida.");
-      }
-    } catch (error) {
-      const detail = error?.message || "Não foi possível reconhecer o texto da nota pela câmera.";
-      setProcessing(100, `${detail} Use Usar foto para tentar novamente.`, "QR reconhecido", true);
-      showToast("QR lido; use Usar foto para preencher a compra automaticamente.");
-    } finally {
-      frame.width = 0;
-      frame.height = 0;
-    }
+    setProcessing(100, "QR lido. Para reconhecer o mercado e os produtos, toque em Usar foto e selecione uma foto nítida da nota inteira.", "QR reconhecido", false);
+    showToast("QR lido. Agora use a foto da nota para preencher os itens.");
   }
   function applyQrValue(value) {
     $("#qrInput").value = value;
@@ -812,8 +832,10 @@
     let source = null;
     let objectUrl = "";
     try {
-      if (window.createImageBitmap) source = await createImageBitmap(file);
-      else {
+      if (window.createImageBitmap) {
+        try { source = await createImageBitmap(file); } catch (error) { source = null; }
+      }
+      if (!source) {
         objectUrl = URL.createObjectURL(file);
         source = await new Promise((resolve, reject) => {
           const image = new Image();
@@ -1024,6 +1046,7 @@
     }
     showToast("Foto recebida. Preparando a leitura da nota…");
     let image = null;
+    let receiptCanvas = null;
     let highestProgress = 20;
     try {
       const receiptDialogOpen = $("#receiptDialog").open;
@@ -1032,14 +1055,19 @@
       setProcessing(2, "Abrindo a foto…");
       image = await imageFileToCanvas(file);
       setProcessing(12, "Procurando o QR code…");
-      const qrValue = await decodeImageSource(image.canvas) || previousQrValue;
+      const qrDetails = await decodeImageDetails(image.canvas);
+      const qrValue = qrDetails?.value || previousQrValue;
       if (qrValue) applyQrValue(qrValue);
-      setProcessing(20, "Carregando o leitor de texto…");
+      setProcessing(18, "Recortando e melhorando a foto…");
+      receiptCanvas = prepareReceiptCanvas(image.canvas, qrDetails?.rectangle);
+      if (!receiptCanvas) throw new Error("Não foi possível preparar a foto. Tente escolher outra imagem.");
+      setProcessing(25, "Carregando o leitor de texto…");
       const worker = await getOcrWorker((message) => {
         highestProgress = Math.max(highestProgress, ocrProgressPercent(message));
         setProcessing(highestProgress, ocrProgressLabel(message));
       });
-      const result = await worker.recognize(image.canvas);
+      await worker.setParameters({ tessedit_pageseg_mode: "6", preserve_interword_spaces: "1", user_defined_dpi: "300" });
+      const result = await worker.recognize(receiptCanvas);
       setProcessing(Math.max(95, highestProgress), "Organizando os dados reconhecidos…");
       const parsed = applyOcrReceipt(result.data.text, qrValue);
       const itemMessage = parsed.itemsApplied
@@ -1053,6 +1081,10 @@
       if (!panel.hidden) setProcessing(Math.max(20, highestProgress), detail, "Leitura incompleta", true);
       showToast(detail);
     } finally {
+      if (receiptCanvas) {
+        receiptCanvas.width = 0;
+        receiptCanvas.height = 0;
+      }
       image?.cleanup?.();
       setTimeout(() => $("#storeInput").focus(), 80);
     }
