@@ -742,7 +742,16 @@
   async function lookupNfceReceipt(qrValue) {
     if (!cloud.client) throw new Error("A consulta automática da SEFAZ não está conectada.");
     const { data, error } = await cloud.client.functions.invoke("nfce-lookup", { body: { qrValue } });
-    if (error || data?.error) throw new Error(data?.error || error?.message || "A consulta automática não respondeu.");
+    let responseError = data?.error;
+    if (!responseError && error?.context && typeof error.context.clone === "function") {
+      try {
+        const body = await error.context.clone().json();
+        responseError = body?.error || body?.message;
+      } catch { /* Keep the SDK error when the response is not JSON. */ }
+    }
+    if (error || responseError) {
+      throw new Error(responseError || error?.message || "A consulta automática não respondeu.");
+    }
     if (!data?.receipt || !Array.isArray(data.receipt.items) || !data.receipt.items.length) {
       throw new Error("A SEFAZ não retornou os itens dessa nota.");
     }
