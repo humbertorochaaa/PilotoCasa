@@ -24,6 +24,7 @@
   let scanFrame = 0;
   let barcodeDetector = null;
   let lastScanAt = 0;
+  let pdfJsPromise = null;
   const scanCanvas = document.createElement("canvas");
   const scanContext = scanCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -504,40 +505,51 @@
     const video = $("#scannerVideo");
     if (video) video.srcObject = null;
   }
-  async function decodeQrFile(file) {
+  async function loadPdfJs() {
+    if (!pdfJsPromise) {
+      const version = "6.2.108";
+      const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/`;
+      pdfJsPromise = import(`${baseUrl}pdf.min.mjs`).then((pdfjsLib) => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `${baseUrl}pdf.worker.min.mjs`;
+        return pdfjsLib;
+      }).catch((error) => {
+        pdfJsPromise = null;
+        throw error;
+      });
+    }
+    return pdfJsPromise;
+  }
+  async function findQrInPdf(file) {
     if (!("jsQR" in window) && !("BarcodeDetector" in window)) {
       throw new Error("O leitor QR não carregou. Confira sua conexão e tente novamente.");
     }
     if (!barcodeDetector && "BarcodeDetector" in window) {
       try { barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (error) { barcodeDetector = null; }
     }
-    let source = null;
-    let objectUrl = "";
+    const pdfjsLib = await loadPdfJs();
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+    const pdf = await loadingTask.promise;
+    const pagesToScan = Math.min(pdf.numPages, 10);
     try {
-      if (window.createImageBitmap) source = await createImageBitmap(file);
-      else {
-        objectUrl = URL.createObjectURL(file);
-        source = await new Promise((resolve, reject) => {
-          const image = new Image();
-          image.onload = () => resolve(image);
-          image.onerror = reject;
-          image.src = objectUrl;
-        });
+      for (let pageNumber = 1; pageNumber <= pagesToScan; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(2, 1400 / baseViewport.width, 1800 / baseViewport.height);
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({ canvasContext: context, viewport }).promise;
+        const qrValue = await decodeImageSource(canvas);
+        page.cleanup();
+        canvas.width = 0;
+        canvas.height = 0;
+        if (qrValue) return { qrValue, pageNumber, scannedPages: pagesToScan, totalPages: pdf.numPages };
       }
-      return await decodeImageSource(source);
+      return { qrValue: "", pageNumber: 0, scannedPages: pagesToScan, totalPages: pdf.numPages };
     } finally {
-      source?.close?.();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    }
-  }
-  async function readQrImage(file) {
-    const message = $("#scannerMessage");
-    try {
-      const result = await decodeQrFile(file);
-      if (result) onQrRead(result);
-      else message.textContent = "Não encontramos um QR code nessa imagem. Tente uma foto mais nítida.";
-    } catch (error) {
-      message.textContent = error.message || "Não foi possível ler essa imagem. Tente a câmera ou cole a chave.";
+      await pdf.destroy();
     }
   }
   async function handleReceiptUpload(file) {
@@ -546,22 +558,22 @@
       showToast("No celular, use Escanear nota para abrir a câmera.");
       return;
     }
-    if (!file.type.startsWith("image/")) {
-      showToast("Envie uma foto ou imagem da nota (JPG, PNG ou WEBP).");
+    if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) {
+      showToast("No desktop, envie um arquivo PDF da nota.");
       return;
     }
     openReceipt("", false);
-    showToast("Imagem selecionada. Procurando o QR code…");
+    showToast("Lendo o PDF da nota…");
     try {
-      const result = await decodeQrFile(file);
-      if (result) {
-        applyQrValue(result);
-        showToast("QR code encontrado. Confira e inclua os itens da nota.");
+      const result = await findQrInPdf(file);
+      if (result.qrValue) {
+        applyQrValue(result.qrValue);
+        showToast(`QR encontrado na página ${result.pageNumber}. Confira e inclua os itens.`);
       } else {
-        showToast("Imagem aberta. QR não encontrado; preencha os dados manualmente.");
+        showToast(`QR não encontrado nas ${result.scannedPages} páginas analisadas; preencha os dados manualmente.`);
       }
     } catch (error) {
-      showToast(error.message || "Não foi possível ler a imagem. Você pode preencher os dados manualmente.");
+      showToast("Não foi possível ler esse PDF. Confira sua conexão e tente novamente.");
     } finally {
       setTimeout(() => $("#storeInput").focus(), 80);
     }
@@ -615,7 +627,6 @@
     });
     $("#openQrScanner").addEventListener("click", openScanner);
     $("#startScannerButton").addEventListener("click", startCamera);
-    $("#qrImageInput").addEventListener("change", (event) => { if (event.target.files?.[0]) readQrImage(event.target.files[0]); });
     $$("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => $("#receiptDialog").close()));
     $$("[data-close-scanner]").forEach((button) => button.addEventListener("click", () => { stopScanner(); $("#scannerDialog").close(); }));
     $("#scannerDialog").addEventListener("close", stopScanner);
