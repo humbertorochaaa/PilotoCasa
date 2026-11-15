@@ -74,8 +74,8 @@
           </div>
 
           <div class="section-heading">
-            <div><p class="section-kicker">ACOMPANHAMENTO DA CASA</p><h2>O retrato deste mês</h2></div>
-            <span class="month-tag" id="monthTag"></span>
+            <div><p class="section-kicker">ACOMPANHAMENTO DA CASA</p><h2>O retrato do período</h2></div>
+            <select class="month-tag" id="monthTag" aria-label="Escolher mês do painel"></select>
           </div>
 
           <div class="stat-grid">
@@ -85,9 +85,9 @@
               <div class="stat-foot"><span class="stat-note" id="statSpendNote">Este mês</span><span class="stat-arrow">↗</span></div>
             </article>
             <article class="stat-card">
-              <div class="stat-top"><span class="stat-label">Compras registradas</span><span class="stat-icon icon-yellow">▤</span></div>
+              <div class="stat-top"><span class="stat-label">Notas no período</span><span class="stat-icon icon-yellow">▤</span></div>
               <strong class="stat-value" id="statReceipts">0</strong>
-              <div class="stat-foot"><span class="stat-note">Notas adicionadas</span><span class="stat-arrow">↗</span></div>
+              <div class="stat-foot"><span class="stat-note">Mês selecionado</span><span class="stat-arrow">↗</span></div>
             </article>
             <article class="stat-card">
               <div class="stat-top"><span class="stat-label">Itens recorrentes</span><span class="stat-icon icon-lilac">⟳</span></div>
@@ -97,13 +97,13 @@
             <article class="stat-card">
               <div class="stat-top"><span class="stat-label">Mercados visitados</span><span class="stat-icon icon-peach">⌖</span></div>
               <strong class="stat-value" id="statStores">0</strong>
-              <div class="stat-foot"><span class="stat-note">Neste mês</span><span class="stat-arrow">↗</span></div>
+              <div class="stat-foot"><span class="stat-note">No período selecionado</span><span class="stat-arrow">↗</span></div>
             </article>
           </div>
 
           <div class="dashboard-grid">
             <article class="panel spending-panel">
-              <div class="panel-heading"><div><p class="section-kicker">VISÃO DO PERÍODO</p><h3>Compras ao longo do piloto</h3></div><span class="panel-caption">Por semana</span></div>
+              <div class="panel-heading"><div><p class="section-kicker">VISÃO DO PERÍODO</p><h3>Compras no mês selecionado</h3></div><span class="panel-caption">Por semana</span></div>
               <div class="chart-summary"><strong id="chartTotal">R$ 0,00</strong><span>total registrado</span></div>
               <div class="bar-chart" id="weeklyChart" aria-label="Gastos por semana"></div>
               <div class="chart-legend"><span><i></i> Valor das notas registradas</span><span id="chartReceiptCount">0 compras</span></div>
@@ -193,15 +193,15 @@
     <dialog class="auth-dialog" id="authDialog" aria-labelledby="authTitle">
       <form id="authForm">
         <div class="dialog-head"><div><p class="section-kicker">PILOTO COMPARTILHADO</p><h2 id="authTitle">Entrar na Despensa</h2></div></div>
-        <p class="auth-intro">Use o e-mail e a senha do convite para acessar as compras compartilhadas.</p>
+        <p class="auth-intro">Entre com o e-mail e a senha para acessar as compras compartilhadas.</p>
         <label class="field"><span>E-mail</span><input id="authEmail" type="email" autocomplete="username" required /></label>
         <label class="field"><span>Senha</span><input id="authPassword" type="password" autocomplete="current-password" required /></label>
         <p class="auth-status" id="authStatus" role="status" aria-live="polite"></p>
         <button class="button button-primary auth-submit" type="submit" id="authSubmit">Entrar</button>
       </form>
       <form id="invitePasswordForm" hidden>
-        <div class="dialog-head"><div><p class="section-kicker">CONVITE DO PILOTO</p><h2 id="invitePasswordTitle">Crie sua senha</h2></div></div>
-        <p class="auth-intro">Defina uma senha para voltar às compras compartilhadas depois deste primeiro acesso.</p>
+        <div class="dialog-head"><div><p class="section-kicker">PRIMEIRO ACESSO</p><h2 id="invitePasswordTitle">Troque sua senha temporária</h2></div></div>
+        <p class="auth-intro">Defina sua senha pessoal para continuar no piloto.</p>
         <label class="field"><span>Nova senha</span><input id="invitePassword" type="password" minlength="8" autocomplete="new-password" required /></label>
         <label class="field"><span>Confirme a senha</span><input id="invitePasswordConfirm" type="password" minlength="8" autocomplete="new-password" required /></label>
         <p class="auth-status" id="invitePasswordStatus" role="status" aria-live="polite"></p>
@@ -211,8 +211,8 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js?v=beta-auth-1"></script>
-    <script src="app.js?v=beta-auth-1"></script>
+    <script src="supabase-config.js?v=beta-crud-2"></script>
+    <script src="app.js?v=beta-crud-2"></script>
   </body>
 </html>
 
