@@ -63,6 +63,8 @@ h1 { margin: 9px 0 5px; font: 700 27px Manrope, sans-serif; letter-spacing: -.8p
 .button-primary { border-color: var(--green); color: white; background: var(--green); box-shadow: 0 3px 7px rgba(23,61,48,.12); }
 .button-primary:hover { border-color: #24543f; background: #24543f; transform: translateY(-1px); }
 .plus { font-size: 17px; font-weight: 400; }
+.upload-icon { display: inline-block; font-size: 15px; line-height: 1; transform: rotate(180deg); }
+html.mobile-device #uploadReceiptButton, html.mobile-device .upload-qr-button { display: none !important; }
 .button-outline { border-color: #e0e6df; color: #45614f; background: white; }
 .button-outline:hover { border-color: #afc5af; background: #f8fbf5; }
 .button-small { min-height: 32px; padding: 0 11px; font-size: 10px; }
@@ -287,6 +289,7 @@ dialog { color: var(--ink); }
   .topbar h1 { font-size: 22px; }
   .page-subtitle { max-width: 240px; font-size: 10px; }
   .top-actions { padding-top: 0; }
+  .top-actions #uploadReceiptButton { display: none; }
   .today-pill { display: none; }
   .button { min-height: 36px; padding: 0 11px; font-size: 9px; }
   .pilot-banner { min-height: auto; grid-template-columns: 1fr; gap: 17px; padding: 23px; }
