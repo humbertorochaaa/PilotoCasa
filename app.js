@@ -13,6 +13,10 @@
   ];
   const unitOptions = ["kg", "g", "L", "ml", "un"];
   const today = localDateString(new Date());
+  const isMobileDevice = Boolean(navigator.userAgentData?.mobile)
+    || /iPhone|iPod|Android.*Mobile|Windows Phone|Mobile/i.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  document.documentElement.classList.toggle("mobile-device", isMobileDevice);
   let state = loadState();
   let toastTimer;
   let scanStream = null;
@@ -482,11 +486,14 @@
     return null;
   }
   function onQrRead(value) {
-    $("#qrInput").value = value;
-    updateConsultationLink();
+    applyQrValue(value);
     stopScanner();
     $("#scannerDialog").close();
     showToast(/\d{44}/.test(value) ? "Chave da nota lida. Confira e adicione os itens." : "QR code lido. Confira o link e adicione os itens.");
+  }
+  function applyQrValue(value) {
+    $("#qrInput").value = value;
+    updateConsultationLink();
   }
   function stopScanner() {
     scanActive = false;
@@ -497,11 +504,12 @@
     const video = $("#scannerVideo");
     if (video) video.srcObject = null;
   }
-  async function readQrImage(file) {
-    const message = $("#scannerMessage");
+  async function decodeQrFile(file) {
     if (!("jsQR" in window) && !("BarcodeDetector" in window)) {
-      message.textContent = "A leitura de imagem não está disponível neste navegador. Tente pela câmera ou cole a chave.";
-      return;
+      throw new Error("O leitor QR não carregou. Confira sua conexão e tente novamente.");
+    }
+    if (!barcodeDetector && "BarcodeDetector" in window) {
+      try { barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (error) { barcodeDetector = null; }
     }
     let source = null;
     let objectUrl = "";
@@ -516,14 +524,46 @@
           image.src = objectUrl;
         });
       }
-      const result = await decodeImageSource(source);
-      if (result) onQrRead(result);
-      else message.textContent = "Não encontramos um QR code nessa imagem. Tente uma foto mais nítida.";
-    } catch (error) {
-      message.textContent = "Não foi possível ler essa imagem. Tente a câmera ou cole o link da nota.";
+      return await decodeImageSource(source);
     } finally {
       source?.close?.();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
+  }
+  async function readQrImage(file) {
+    const message = $("#scannerMessage");
+    try {
+      const result = await decodeQrFile(file);
+      if (result) onQrRead(result);
+      else message.textContent = "Não encontramos um QR code nessa imagem. Tente uma foto mais nítida.";
+    } catch (error) {
+      message.textContent = error.message || "Não foi possível ler essa imagem. Tente a câmera ou cole a chave.";
+    }
+  }
+  async function handleReceiptUpload(file) {
+    if (!file) return;
+    if (isMobileDevice) {
+      showToast("No celular, use Escanear nota para abrir a câmera.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      showToast("Envie uma foto ou imagem da nota (JPG, PNG ou WEBP).");
+      return;
+    }
+    openReceipt("", false);
+    showToast("Imagem selecionada. Procurando o QR code…");
+    try {
+      const result = await decodeQrFile(file);
+      if (result) {
+        applyQrValue(result);
+        showToast("QR code encontrado. Confira e inclua os itens da nota.");
+      } else {
+        showToast("Imagem aberta. QR não encontrado; preencha os dados manualmente.");
+      }
+    } catch (error) {
+      showToast(error.message || "Não foi possível ler a imagem. Você pode preencher os dados manualmente.");
+    } finally {
+      setTimeout(() => $("#storeInput").focus(), 80);
     }
   }
 
@@ -536,6 +576,12 @@
   function bindEvents() {
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPage(button.dataset.view)));
     $("#addReceiptButton").addEventListener("click", beginPurchaseCapture);
+    $("#uploadReceiptButton").addEventListener("click", () => $("#receiptUploadInput").click());
+    $("#receiptUploadInput").addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (file) handleReceiptUpload(file);
+    });
     $("#receiptForm").addEventListener("submit", handleReceiptSubmit);
     $("#addItemButton").addEventListener("click", () => addItemRow());
     $("#itemRows").addEventListener("input", (event) => {
