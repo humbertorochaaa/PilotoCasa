@@ -699,12 +699,15 @@
       });
       const result = await worker.recognize(frame);
       const parsed = applyOcrReceipt(result.data.text, value);
-      if (parsed.items.length) {
-        setProcessing(100, `${parsed.items.length} produtos reconhecidos. Confira loja, data e itens antes de salvar.`, "Leitura concluída");
-        showToast(`${parsed.items.length} produtos reconhecidos. Confira os dados da nota.`);
+      if (parsed.itemsApplied) {
+        const itemSummary = parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount} itens` : `${parsed.items.length} produtos`;
+        const storeSummary = parsed.store ? `Mercado: ${parsed.store}.` : "Mercado não reconhecido.";
+        setProcessing(100, `${itemSummary} identificados. ${storeSummary} Confira tudo antes de salvar.`, "Leitura concluída");
+        showToast(`${itemSummary} reconhecidos. Confira os dados da nota.`);
       } else {
-        setProcessing(100, "O QR foi lido, mas a câmera não enquadrou os itens. Use Usar foto para enviar uma imagem da nota inteira.", "QR reconhecido", true);
-        showToast("QR lido. Para importar os produtos, enquadre a nota inteira ou use Usar foto.");
+        const found = parsed.items.length ? `Encontrei ${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} linhas possíveis, mas não consegui confirmar a tabela completa. ` : "";
+        setProcessing(100, `QR lido. ${found}Não preenchi os itens para evitar dados incorretos. Use Usar foto com uma imagem nítida da tabela de produtos.`, "QR reconhecido; confira a foto", true);
+        showToast("Não consegui confirmar os produtos. Use Usar foto com a nota inteira e nítida.");
       }
     } catch (error) {
       const detail = error?.message || "Não foi possível reconhecer o texto da nota pela câmera.";
@@ -860,7 +863,7 @@
     return "un";
   }
   function parseOcrItemLine(line) {
-    const excluded = /\b(total|subtotal|pagamento|troco|desconto|tributos|impostos|chave|acesso|cnpj|cpf|consumidor|autorizacao|protocolo|documento|danfe|nfce|consulta|valor aproximado|forma de pagamento)\b/i;
+    const excluded = /\b(total|subtotal|pagamento|troco|desconto|tributos|impostos|federal|estadual|municipal|icms|chave|acesso|cnpj|cpf|consumidor|autorizacao|protocolo|documento|danfe|nfce|consulta|valor|juros|parcelas|credito|debito|pix|cartao|forma de pagamento|economizou)\b/i;
     if (excluded.test(line)) return null;
     const prices = [...line.matchAll(/(?:R\s*\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/g)];
     if (!prices.length) return null;
@@ -868,8 +871,8 @@
     const prefix = line.slice(0, finalPrice.index).trim();
     const quantityUnits = [...prefix.matchAll(/(\d+(?:[,.]\d{1,3})?)\s*(kg|g|l|lt|ml|unid|und|un|pc|pct|pç|cx|fd|dz)\b/gi)];
     let namePart = prefix;
-    let quantity = 1;
-    let unit = "un";
+    let quantity = 0;
+    let unit = "";
     const quantityUnit = quantityUnits.at(-1);
     if (quantityUnit) {
       quantity = parseBrazilianNumber(quantityUnit[1]);
@@ -879,9 +882,11 @@
       const quantityTimes = prefix.match(/(\d+(?:[,.]\d{1,3})?)\s*[xX]\s*$/);
       if (quantityTimes) {
         quantity = parseBrazilianNumber(quantityTimes[1]);
+        unit = "un";
         namePart = prefix.slice(0, quantityTimes.index).trim();
       }
     }
+    if (!(quantity > 0) || !unit) return null;
     const tokens = namePart.split(/\s+/).filter(Boolean);
     while (tokens.length > 1 && /^\d{1,3}$/.test(tokens[0])) tokens.shift();
     while (tokens.length > 1 && /^\d{4,14}$/.test(tokens[0])) tokens.shift();
@@ -892,8 +897,24 @@
   }
   function parseReceiptOcr(text) {
     const lines = String(text || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-    const ignoreStoreLine = /\b(danfe|documento auxiliar|nota fiscal|nfce|cupom fiscal|consumidor|cnpj|cpf|consulta|sefaz|chave de acesso|protocolo|serie|série)\b/i;
-    const store = lines.slice(0, 14).find((line) => line.length > 2 && line.length <= 90 && /[A-Za-zÀ-ÿ]{3}/.test(line) && !ignoreStoreLine.test(line)) || "";
+    const normalizedLines = lines.map((line) => normalizeName(line));
+    const ignoreStoreLine = /\b(danfe|documento auxiliar|nota fiscal|nfce|cupom fiscal|consumidor|cnpj|cpf|consulta|sefaz|chave de acesso|protocolo|serie|avenida|rua|rodovia|endereco|cep|fone|telefone|inscricao estadual|ie)\b/;
+    const headerIndex = normalizedLines.findIndex((line) =>
+      /\b(descricao|produto|mercadoria)\b/.test(line) && /\b(cod|codigo|qtd|qt|quant|un|unid|vlr|valor)\b/.test(line)
+    );
+    const storeCandidates = lines.slice(0, Math.min(headerIndex >= 0 ? headerIndex : 14, 14))
+      .map((line) => ({ line, normalized: normalizeName(line) }))
+      .filter(({ line, normalized }) => {
+        const words = normalized.match(/[a-z]{3,}/g) || [];
+        return line.length >= 5 && line.length <= 90 && words.length > 0 && !ignoreStoreLine.test(normalized)
+          && !/\d{3,}/.test(line) && !/\b[a-z]{3,}\s+\d{1,2}\s*$/.test(normalized);
+      })
+      .map(({ line, normalized }) => ({
+        line,
+        score: (normalized.match(/[a-z]{3,}/g) || []).length >= 2 ? 2 : ((normalized.match(/[a-z]{3,}/g) || [])[0]?.length >= 6 ? 1 : 0)
+      }))
+      .filter((candidate) => candidate.score > 0);
+    const store = storeCandidates.sort((a, b) => b.score - a.score)[0]?.line || "";
     const dateMatch = String(text || "").match(/\b([0-3]?\d)[/.\-]([01]?\d)[/.\-](20\d{2})\b/);
     let date = "";
     if (dateMatch) {
@@ -902,11 +923,26 @@
       const year = Number(dateMatch[3]);
       if (day >= 1 && day <= 31 && month >= 1 && month <= 12) date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     }
+    const itemHeaderFound = headerIndex >= 0;
+    const stopItemSection = (normalized) =>
+      /\b(qtd|quantidade)\b.*\b(total|itens)\b/.test(normalized)
+      || /\b(total de produtos|total produtos|valor total|total da compra|forma de pagamento|tributos|impostos|consulta pela chave|chave de acesso|protocolo de autorizacao|dados do consumidor|consumidor nao identificado)\b/.test(normalized);
+    let itemLines = [];
+    if (itemHeaderFound) {
+      for (let index = headerIndex + 1; index < lines.length; index += 1) {
+        if (stopItemSection(normalizedLines[index])) break;
+        itemLines.push(lines[index]);
+      }
+    } else {
+      itemLines = lines.filter((line, index) => !stopItemSection(normalizedLines[index]));
+    }
+    const expectedMatch = lines.map((line) => normalizeName(line).match(/\bitens\s+(\d{1,3})\b/)).find(Boolean);
+    const expectedItemCount = expectedMatch ? Number(expectedMatch[1]) : 0;
     const items = [];
     const seen = new Set();
-    for (let index = 0; index < lines.length; index += 1) {
-      const current = parseOcrItemLine(lines[index]);
-      const combined = current ? null : parseOcrItemLine(`${lines[index]} ${lines[index + 1] || ""}`);
+    for (let index = 0; index < itemLines.length; index += 1) {
+      const current = parseOcrItemLine(itemLines[index]);
+      const combined = current ? null : parseOcrItemLine(`${itemLines[index]} ${itemLines[index + 1] || ""}`);
       const item = current || combined;
       if (!item) continue;
       const key = normalizeName(item.name);
@@ -916,21 +952,24 @@
       if (items.length >= 60) break;
     }
     const keyMatch = String(text || "").match(/\b\d{44}\b/);
-    return { store, date, items, accessKey: keyMatch?.[0] || "" };
+    return { store, date, items, expectedItemCount, itemHeaderFound, accessKey: keyMatch?.[0] || "" };
   }
   function applyOcrReceipt(text, qrValue) {
     const parsed = parseReceiptOcr(text);
     if (parsed.store) $("#storeInput").value = parsed.store;
     if (parsed.date) $("#dateInput").value = parsed.date;
     if (qrValue || parsed.accessKey) applyQrValue(qrValue || parsed.accessKey);
-    if (parsed.items.length) {
+    const itemsAreComplete = parsed.items.length > 0
+      && (!parsed.expectedItemCount || parsed.items.length >= parsed.expectedItemCount)
+      && (parsed.itemHeaderFound || parsed.expectedItemCount > 0 || parsed.items.length >= 3);
+    if (itemsAreComplete) {
       $("#itemRows").innerHTML = "";
       parsed.items.forEach((item) => addItemRow(item));
       updateFormTotal();
     }
     $("#ocrTextOutput").textContent = String(text || "").trim().slice(0, 12000);
     $("#ocrTextDetails").hidden = !String(text || "").trim();
-    return parsed;
+    return { ...parsed, itemsApplied: itemsAreComplete };
   }
   function ocrProgressPercent(message) {
     const status = String(message.status || "").toLowerCase();
@@ -976,11 +1015,11 @@
       const result = await worker.recognize(image.canvas);
       setProcessing(Math.max(95, highestProgress), "Organizando os dados reconhecidos…");
       const parsed = applyOcrReceipt(result.data.text, qrValue);
-      const itemMessage = parsed.items.length
-        ? `${parsed.items.length} itens reconhecidos. Confira os campos antes de salvar.`
-        : "Texto lido. Confira o estabelecimento e cadastre os itens abaixo.";
-      setProcessing(100, itemMessage, "Leitura concluída");
-      showToast(qrValue ? "QR e texto da nota lidos. Revise os dados." : "Texto da nota lido. Revise os dados.");
+      const itemMessage = parsed.itemsApplied
+        ? `${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} itens confirmados. ${parsed.store ? `Mercado: ${parsed.store}.` : "Mercado não reconhecido."} Confira os campos antes de salvar.`
+        : `${parsed.items.length ? `Encontrei ${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} linhas possíveis, mas não confirmei a tabela completa. ` : "Não encontrei linhas de produtos confiáveis. "}Não preenchi os itens para evitar dados incorretos. Tente uma foto mais próxima e nítida da tabela de produtos.`;
+      setProcessing(100, itemMessage, parsed.itemsApplied ? "Leitura concluída" : "Confira a leitura", !parsed.itemsApplied);
+      showToast(parsed.itemsApplied ? "Leitura concluída. Revise os dados antes de salvar." : "Não consegui confirmar os produtos. Tente uma foto mais próxima da tabela.");
     } catch (error) {
       const detail = error?.message || "Não foi possível interpretar esta foto.";
       const panel = $("#processingPanel");
