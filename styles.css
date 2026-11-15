@@ -63,8 +63,8 @@ h1 { margin: 9px 0 5px; font: 700 27px Manrope, sans-serif; letter-spacing: -.8p
 .button-primary { border-color: var(--green); color: white; background: var(--green); box-shadow: 0 3px 7px rgba(23,61,48,.12); }
 .button-primary:hover { border-color: #24543f; background: #24543f; transform: translateY(-1px); }
 .plus { font-size: 17px; font-weight: 400; }
-.upload-icon { display: inline-block; font-size: 15px; line-height: 1; transform: rotate(180deg); }
-html.mobile-device #uploadReceiptButton, html.mobile-device .upload-qr-button { display: none !important; }
+.upload-icon { display: inline-block; font-size: 15px; line-height: 1; }
+html.mobile-device #uploadReceiptButton { display: none !important; }
 .button-outline { border-color: #e0e6df; color: #45614f; background: white; }
 .button-outline:hover { border-color: #afc5af; background: #f8fbf5; }
 .button-small { min-height: 32px; padding: 0 11px; font-size: 10px; }
@@ -260,8 +260,6 @@ dialog { color: var(--ink); }
 .scanner-placeholder p { margin: 5px 0 0; color: #d0d9d1; font-size: 9px; }
 .scanner-message { min-height: 20px; margin: 12px 25px 8px; color: #79867d; font-size: 9px; text-align: center; }
 .scanner-actions { display: flex; justify-content: center; gap: 8px; }
-.upload-qr-button { position: relative; overflow: hidden; }
-.upload-qr-button input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .scanner-fallback { margin: 13px 25px 0; color: #9aa49c; font-size: 8px; text-align: center; }
 .toast { position: fixed; z-index: 20; right: 24px; bottom: 24px; max-width: calc(100vw - 40px); padding: 11px 15px; border-radius: 8px; color: white; background: #203f30; box-shadow: 0 9px 24px rgba(20,40,27,.2); font-size: 10px; opacity: 0; pointer-events: none; transform: translateY(8px); transition: .2s ease; }
 .toast.show { opacity: 1; transform: translateY(0); }
@@ -289,7 +287,6 @@ dialog { color: var(--ink); }
   .topbar h1 { font-size: 22px; }
   .page-subtitle { max-width: 240px; font-size: 10px; }
   .top-actions { padding-top: 0; }
-  .top-actions #uploadReceiptButton { display: none; }
   .today-pill { display: none; }
   .button { min-height: 36px; padding: 0 11px; font-size: 9px; }
   .pilot-banner { min-height: auto; grid-template-columns: 1fr; gap: 17px; padding: 23px; }
