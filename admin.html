@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173d30" />
+    <title>Administração — Despensa</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=beta-auth-1" />
+    <link rel="stylesheet" href="admin.css?v=beta-auth-1" />
+  </head>
+  <body class="admin-body">
+    <main class="admin-shell">
+      <header class="admin-header">
+        <a class="brand admin-brand" href="index.html#overview"><span class="brand-icon" aria-hidden="true">▤</span><span class="brand-name">despensa<span>.</span></span></a>
+        <a class="button button-outline" href="index.html#overview">Voltar ao piloto</a>
+      </header>
+
+      <section class="admin-intro">
+        <p class="eyebrow"><span class="eyebrow-dot"></span> PILOTO DA CASA / CONTROLE</p>
+        <h1>Administração</h1>
+        <p>Convide quem vai participar e acompanhe o histórico de alterações.</p>
+      </section>
+
+      <section class="admin-card admin-setup" id="setupNotice" hidden>
+        <span class="admin-card-icon">⚙</span>
+        <div><h2>Falta conectar o banco compartilhado</h2><p>Esta área está pronta, mas logins e auditoria só ficam ativos depois de configurar o projeto Supabase e as regras de acesso.</p></div>
+      </section>
+
+      <section class="admin-card admin-login" id="loginCard" hidden>
+        <div class="admin-card-heading"><div><p class="section-kicker">ACESSO RESTRITO</p><h2>Entrar como administrador</h2></div></div>
+        <form id="adminLoginForm" class="admin-form">
+          <label class="field"><span>E-mail</span><input id="adminEmail" type="email" autocomplete="username" required /></label>
+          <label class="field"><span>Senha</span><input id="adminPassword" type="password" autocomplete="current-password" required /></label>
+          <p class="admin-message" id="loginMessage" role="status" aria-live="polite"></p>
+          <button class="button button-primary" id="loginButton" type="submit">Entrar</button>
+          <button class="button button-outline" id="adminSignOutLogin" type="button" hidden>Sair desta conta</button>
+        </form>
+      </section>
+
+      <section id="adminContent" hidden>
+        <div class="admin-toolbar"><span class="admin-account" id="adminAccount"></span><button class="button button-outline" id="adminSignOut" type="button">Sair</button></div>
+        <div class="admin-grid">
+          <section class="admin-card invite-card">
+            <div class="admin-card-heading"><div><p class="section-kicker">PARTICIPANTES</p><h2>Convidar para o beta</h2><p>O convite permite que a pessoa crie a própria senha e veja as compras compartilhadas.</p></div><span class="admin-card-icon">＋</span></div>
+            <form id="inviteForm" class="invite-form">
+              <label class="field"><span>E-mail do participante</span><input id="inviteEmail" type="email" autocomplete="email" placeholder="amigo@email.com" required /></label>
+              <button class="button button-primary" id="inviteButton" type="submit">Enviar convite</button>
+            </form>
+            <p class="admin-message" id="inviteMessage" role="status" aria-live="polite"></p>
+            <div class="member-list"><div class="subheading"><strong>Contas do beta</strong><span id="memberCount">0</span></div><div id="memberRows"></div></div>
+          </section>
+
+          <section class="admin-card audit-card">
+            <div class="admin-card-heading"><div><p class="section-kicker">RASTREABILIDADE</p><h2>Auditoria</h2><p>Registros de convites e atualizações do histórico compartilhado.</p></div><button class="button button-outline button-small" id="refreshAudit" type="button">Atualizar</button></div>
+            <div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>QUANDO</th><th>QUEM</th><th>AÇÃO</th><th>DETALHES</th></tr></thead><tbody id="auditRows"></tbody></table></div>
+            <p class="admin-message" id="auditMessage" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+      </section>
+      <p class="admin-footer">Ações administrativas exigem login e validação no servidor.</p>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js?v=beta-auth-1"></script>
+    <script src="admin.js?v=beta-auth-1"></script>
+  </body>
+</html>
+
