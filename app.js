@@ -706,7 +706,7 @@
         showToast(`${itemSummary} reconhecidos. Confira os dados da nota.`);
       } else {
         const found = parsed.items.length ? `Encontrei ${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} linhas possíveis, mas não consegui confirmar a tabela completa. ` : "";
-        setProcessing(100, `QR lido. ${found}Não preenchi os itens para evitar dados incorretos. Use Usar foto com uma imagem nítida da tabela de produtos.`, "QR reconhecido; confira a foto", true);
+        setProcessing(100, `QR lido. ${found}A quantidade e a soma dos produtos precisam bater com a nota. Não inseri itens para evitar valores errados. Use Usar foto com uma imagem nítida da tabela.`, "Leitura não confirmada", true);
         showToast("Não consegui confirmar os produtos. Use Usar foto com a nota inteira e nítida.");
       }
     } catch (error) {
@@ -865,7 +865,9 @@
   function parseOcrItemLine(line) {
     const excluded = /\b(total|subtotal|pagamento|troco|desconto|tributos|impostos|federal|estadual|municipal|icms|chave|acesso|cnpj|cpf|consumidor|autorizacao|protocolo|documento|danfe|nfce|consulta|valor|juros|parcelas|credito|debito|pix|cartao|forma de pagamento|economizou)\b/i;
     if (excluded.test(line)) return null;
-    const prices = [...line.matchAll(/(?:R\s*\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/g)];
+    // The receipt quantity can have three decimal places (0,255 kg). Without
+    // the trailing boundary, OCR used to read its first two decimals as R$0,25.
+    const prices = [...line.matchAll(/(?:R\s*\$\s*)?(?<![\d,])(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})(?!\d)/g)];
     if (!prices.length) return null;
     const finalPrice = prices.at(-1);
     const prefix = line.slice(0, finalPrice.index).trim();
@@ -914,7 +916,15 @@
         score: (normalized.match(/[a-z]{3,}/g) || []).length >= 2 ? 2 : ((normalized.match(/[a-z]{3,}/g) || [])[0]?.length >= 6 ? 1 : 0)
       }))
       .filter((candidate) => candidate.score > 0);
-    const store = storeCandidates.sort((a, b) => b.score - a.score)[0]?.line || "";
+    const normalizedReceipt = normalizeName(lines.slice(0, 16).join(" "));
+    const knownStores = [
+      ["forte atacadista", /\bforte\b.*\batacadista\b|\batacadista\b.*\bforte\b/],
+      ["Atacadão", /\batacadao\b/],
+      ["Assaí Atacadista", /\bassai\b/],
+      ["Tenda Atacado", /\btenda\b.*\batacado\b|\btenda\b/]
+    ];
+    const knownStore = knownStores.find(([, pattern]) => pattern.test(normalizedReceipt))?.[0] || "";
+    const store = knownStore || storeCandidates.sort((a, b) => b.score - a.score)[0]?.line || "";
     const dateMatch = String(text || "").match(/\b([0-3]?\d)[/.\-]([01]?\d)[/.\-](20\d{2})\b/);
     let date = "";
     if (dateMatch) {
@@ -936,32 +946,42 @@
     } else {
       itemLines = lines.filter((line, index) => !stopItemSection(normalizedLines[index]));
     }
-    const expectedMatch = lines.map((line) => normalizeName(line).match(/\bitens\s+(\d{1,3})\b/)).find(Boolean);
+    const expectedMatch = lines.map((line) => normalizeName(line).match(/\b(?:qtd\.?\s*total\s*(?:de\s*)?itens|quantidade\s*total\s*(?:de\s*)?itens|total\s*(?:de\s*)?itens|itens)\s*[:.-]?\s*(\d{1,3})\b/)).find(Boolean);
     const expectedItemCount = expectedMatch ? Number(expectedMatch[1]) : 0;
+    const totalLine = lines.map((line) => ({
+      line,
+      normalized: normalizeName(line),
+      amount: [...line.matchAll(/(?:R\s*\$\s*)?(?<![\d,])(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})(?!\d)/g)].map((match) => parseBrazilianNumber(match[1]))
+    })).filter(({ normalized, amount }) => amount.length && /\b(valor total|total da compra|valor a pagar|total a pagar)\b/.test(normalized)).at(-1);
+    const receiptTotal = totalLine?.amount.at(-1) || 0;
     const items = [];
-    const seen = new Set();
     for (let index = 0; index < itemLines.length; index += 1) {
       const current = parseOcrItemLine(itemLines[index]);
       const combined = current ? null : parseOcrItemLine(`${itemLines[index]} ${itemLines[index + 1] || ""}`);
       const item = current || combined;
       if (!item) continue;
-      const key = normalizeName(item.name);
-      if (seen.has(key)) continue;
-      seen.add(key);
       items.push(item);
+      if (combined) index += 1;
       if (items.length >= 60) break;
     }
     const keyMatch = String(text || "").match(/\b\d{44}\b/);
-    return { store, date, items, expectedItemCount, itemHeaderFound, accessKey: keyMatch?.[0] || "" };
+    return { store, date, items, expectedItemCount, itemHeaderFound, receiptTotal, accessKey: keyMatch?.[0] || "" };
   }
   function applyOcrReceipt(text, qrValue) {
     const parsed = parseReceiptOcr(text);
     if (parsed.store) $("#storeInput").value = parsed.store;
     if (parsed.date) $("#dateInput").value = parsed.date;
     if (qrValue || parsed.accessKey) applyQrValue(qrValue || parsed.accessKey);
+    const itemSum = parsed.items.reduce((sum, item) => sum + item.price, 0);
+    const countMatches = !parsed.expectedItemCount || parsed.items.length === parsed.expectedItemCount;
+    const totalMatches = !parsed.receiptTotal
+      || Math.abs(itemSum - parsed.receiptTotal) <= Math.max(2, parsed.receiptTotal * 0.02);
+    const hasValidationAnchor = parsed.expectedItemCount > 0 || parsed.receiptTotal > 0;
     const itemsAreComplete = parsed.items.length > 0
-      && (!parsed.expectedItemCount || parsed.items.length >= parsed.expectedItemCount)
-      && (parsed.itemHeaderFound || parsed.expectedItemCount > 0 || parsed.items.length >= 3);
+      && countMatches
+      && totalMatches
+      && parsed.itemHeaderFound
+      && hasValidationAnchor;
     if (itemsAreComplete) {
       $("#itemRows").innerHTML = "";
       parsed.items.forEach((item) => addItemRow(item));
@@ -1017,8 +1037,8 @@
       const parsed = applyOcrReceipt(result.data.text, qrValue);
       const itemMessage = parsed.itemsApplied
         ? `${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} itens confirmados. ${parsed.store ? `Mercado: ${parsed.store}.` : "Mercado não reconhecido."} Confira os campos antes de salvar.`
-        : `${parsed.items.length ? `Encontrei ${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} linhas possíveis, mas não confirmei a tabela completa. ` : "Não encontrei linhas de produtos confiáveis. "}Não preenchi os itens para evitar dados incorretos. Tente uma foto mais próxima e nítida da tabela de produtos.`;
-      setProcessing(100, itemMessage, parsed.itemsApplied ? "Leitura concluída" : "Confira a leitura", !parsed.itemsApplied);
+        : `${parsed.items.length ? `Encontrei ${parsed.items.length} linhas, mas a quantidade ou a soma não bate com a nota${parsed.expectedItemCount ? ` (${parsed.items.length} lidas; esperado: ${parsed.expectedItemCount})` : ""}. ` : "Não encontrei linhas de produtos confiáveis. "}Não preenchi os itens para evitar valores errados. Tente uma foto mais próxima e nítida da tabela de produtos.`;
+      setProcessing(100, itemMessage, parsed.itemsApplied ? "Leitura concluída" : "Leitura não confirmada", !parsed.itemsApplied);
       showToast(parsed.itemsApplied ? "Leitura concluída. Revise os dados antes de salvar." : "Não consegui confirmar os produtos. Tente uma foto mais próxima da tabela.");
     } catch (error) {
       const detail = error?.message || "Não foi possível interpretar esta foto.";
