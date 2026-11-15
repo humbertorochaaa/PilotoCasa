@@ -8,8 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=beta-auth-1" />
-    <link rel="stylesheet" href="admin.css?v=beta-auth-1" />
+    <link rel="stylesheet" href="styles.css?v=beta-crud-2" />
+    <link rel="stylesheet" href="admin.css?v=beta-crud-2" />
   </head>
   <body class="admin-body">
     <main class="admin-shell">
@@ -21,7 +21,7 @@
       <section class="admin-intro">
         <p class="eyebrow"><span class="eyebrow-dot"></span> PILOTO DA CASA / CONTROLE</p>
         <h1>Administração</h1>
-        <p>Convide quem vai participar e acompanhe o histórico de alterações.</p>
+        <p>Gerencie os acessos e acompanhe as notas e alterações do piloto.</p>
       </section>
 
       <section class="admin-card admin-setup" id="setupNotice" hidden>
@@ -44,27 +44,45 @@
         <div class="admin-toolbar"><span class="admin-account" id="adminAccount"></span><button class="button button-outline" id="adminSignOut" type="button">Sair</button></div>
         <div class="admin-grid">
           <section class="admin-card invite-card">
-            <div class="admin-card-heading"><div><p class="section-kicker">PARTICIPANTES</p><h2>Convidar para o beta</h2><p>O convite permite que a pessoa crie a própria senha e veja as compras compartilhadas.</p></div><span class="admin-card-icon">＋</span></div>
-            <form id="inviteForm" class="invite-form">
-              <label class="field"><span>E-mail do participante</span><input id="inviteEmail" type="email" autocomplete="email" placeholder="amigo@email.com" required /></label>
-              <button class="button button-primary" id="inviteButton" type="submit">Enviar convite</button>
+            <div class="admin-card-heading"><div><p class="section-kicker">PARTICIPANTES</p><h2>Criar login</h2><p>Informe nome, e-mail e uma senha temporária. A pessoa será solicitada a trocar a senha ao entrar.</p></div><span class="admin-card-icon">＋</span></div>
+            <form id="accountForm" class="admin-form">
+              <label class="field"><span>Nome de usuário</span><input id="newUsername" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" autocomplete="off" placeholder="ex.: joao_silva" required /></label>
+              <label class="field"><span>E-mail</span><input id="newEmail" type="email" autocomplete="email" placeholder="amigo@email.com" required /></label>
+              <label class="field"><span>Senha temporária</span><input id="newTempPassword" type="password" minlength="8" autocomplete="new-password" required /></label>
+              <button class="button button-primary" id="createAccountButton" type="submit">Criar login</button>
             </form>
-            <p class="admin-message" id="inviteMessage" role="status" aria-live="polite"></p>
+            <p class="admin-message" id="accountMessage" role="status" aria-live="polite"></p>
             <div class="member-list"><div class="subheading"><strong>Contas do beta</strong><span id="memberCount">0</span></div><div id="memberRows"></div></div>
           </section>
 
           <section class="admin-card audit-card">
-            <div class="admin-card-heading"><div><p class="section-kicker">RASTREABILIDADE</p><h2>Auditoria</h2><p>Registros de convites e atualizações do histórico compartilhado.</p></div><button class="button button-outline button-small" id="refreshAudit" type="button">Atualizar</button></div>
+            <div class="admin-card-heading"><div><p class="section-kicker">RASTREABILIDADE</p><h2>Auditoria</h2><p>Contas criadas, alteradas ou removidas e mudanças nas notas do histórico compartilhado.</p></div><button class="button button-outline button-small" id="refreshAudit" type="button">Atualizar</button></div>
             <div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>QUANDO</th><th>QUEM</th><th>AÇÃO</th><th>DETALHES</th></tr></thead><tbody id="auditRows"></tbody></table></div>
             <p class="admin-message" id="auditMessage" role="status" aria-live="polite"></p>
           </section>
         </div>
+        <section class="admin-card admin-receipts">
+          <div class="admin-card-heading"><div><p class="section-kicker">DADOS DO PILOTO</p><h2>Lançamentos da casa</h2><p>Consulte e remova uma nota registrada por engano. A exclusão entra na auditoria.</p></div><button class="button button-outline button-small" id="refreshReceipts" type="button">Atualizar</button></div>
+          <div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>DATA</th><th>MERCADO</th><th>ITENS</th><th>TOTAL</th><th>AÇÃO</th></tr></thead><tbody id="adminReceiptRows"></tbody></table></div>
+          <p class="admin-message" id="receiptsMessage" role="status" aria-live="polite"></p>
+        </section>
       </section>
       <p class="admin-footer">Ações administrativas exigem login e validação no servidor.</p>
     </main>
+    <dialog class="admin-edit-dialog" id="editAccountDialog" aria-labelledby="editAccountTitle">
+      <form id="editAccountForm">
+        <div class="dialog-head"><div><p class="section-kicker">CONTA DO BETA</p><h2 id="editAccountTitle">Editar participante</h2></div><button class="icon-button" type="button" id="closeEditAccount" aria-label="Fechar">×</button></div>
+        <input id="editUserId" type="hidden" />
+        <label class="field"><span>Nome de usuário</span><input id="editUsername" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" required /></label>
+        <label class="field"><span>E-mail</span><input id="editEmail" type="email" autocomplete="email" required /></label>
+        <label class="field"><span>Nova senha temporária <small>opcional</small></span><input id="editTempPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Deixe vazio para manter a senha atual" /></label>
+        <p class="admin-message" id="editAccountMessage" role="status" aria-live="polite"></p>
+        <div class="dialog-footer"><button class="button button-quiet" type="button" id="cancelEditAccount">Cancelar</button><button class="button button-primary" id="saveEditAccount" type="submit">Salvar alterações</button></div>
+      </form>
+    </dialog>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js?v=beta-auth-1"></script>
-    <script src="admin.js?v=beta-auth-1"></script>
+    <script src="supabase-config.js?v=beta-crud-2"></script>
+    <script src="admin.js?v=beta-crud-2"></script>
   </body>
 </html>
 
