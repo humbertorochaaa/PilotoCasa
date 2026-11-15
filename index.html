@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=beta-auth-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +33,7 @@
             <div class="pilot-mini-top"><span class="pulse-dot"></span><span>PILOTO EM ANDAMENTO</span></div>
             <strong id="sidePilotDay">Dia 1 de 35</strong>
             <div class="mini-progress"><span id="sideProgressBar"></span></div>
-            <small>Seus dados ficam neste navegador.</small>
+            <small id="storageStatus">Seus dados ficam neste navegador.</small>
           </div>
           <button class="export-button" id="exportButton" type="button"><span>↓</span> Baixar meus dados</button>
         </div>
@@ -48,8 +48,12 @@
           </div>
           <div class="top-actions">
             <span class="today-pill" id="todayLabel"></span>
-            <label class="button button-outline file-upload-label" id="uploadPhotoButton"><span class="upload-icon">↑</span> Enviar foto<input id="photoUploadInput" type="file" accept="image/*" aria-label="Escolher foto da nota" /></label>
-            <label class="button button-outline file-upload-label" id="uploadReceiptButton"><span class="upload-icon">↑</span> Enviar PDF<input id="receiptUploadInput" type="file" accept="application/pdf,.pdf" aria-label="Escolher PDF da nota" /></label>
+            <button class="button button-outline" id="uploadPhotoButton" type="button"><span class="upload-icon">↑</span> Enviar foto</button>
+            <input id="photoUploadInput" class="visually-hidden-file" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.avif" aria-label="Escolher foto da nota" tabindex="-1" />
+            <button class="button button-outline" id="uploadReceiptButton" type="button"><span class="upload-icon">↑</span> Enviar PDF</button>
+            <input id="receiptUploadInput" class="visually-hidden-file" type="file" accept="application/pdf,.pdf" aria-label="Escolher PDF da nota" tabindex="-1" />
+            <a class="button button-outline" id="adminNavLink" href="admin.html" hidden>Admin beta</a>
+            <button class="button button-outline" id="signOutButton" type="button" hidden>Sair</button>
             <button class="button button-primary" id="addReceiptButton" type="button"><span class="plus">▦</span> Escanear nota</button>
           </div>
         </header>
@@ -186,9 +190,29 @@
       <div class="scanner-actions"><button class="button button-primary" id="startScannerButton" type="button">Abrir câmera</button></div>
       <p class="scanner-fallback">Se preferir, feche esta janela e cole o link ou a chave de acesso no formulário.</p>
     </dialog>
+    <dialog class="auth-dialog" id="authDialog" aria-labelledby="authTitle">
+      <form id="authForm">
+        <div class="dialog-head"><div><p class="section-kicker">PILOTO COMPARTILHADO</p><h2 id="authTitle">Entrar na Despensa</h2></div></div>
+        <p class="auth-intro">Use o e-mail e a senha do convite para acessar as compras compartilhadas.</p>
+        <label class="field"><span>E-mail</span><input id="authEmail" type="email" autocomplete="username" required /></label>
+        <label class="field"><span>Senha</span><input id="authPassword" type="password" autocomplete="current-password" required /></label>
+        <p class="auth-status" id="authStatus" role="status" aria-live="polite"></p>
+        <button class="button button-primary auth-submit" type="submit" id="authSubmit">Entrar</button>
+      </form>
+      <form id="invitePasswordForm" hidden>
+        <div class="dialog-head"><div><p class="section-kicker">CONVITE DO PILOTO</p><h2 id="invitePasswordTitle">Crie sua senha</h2></div></div>
+        <p class="auth-intro">Defina uma senha para voltar às compras compartilhadas depois deste primeiro acesso.</p>
+        <label class="field"><span>Nova senha</span><input id="invitePassword" type="password" minlength="8" autocomplete="new-password" required /></label>
+        <label class="field"><span>Confirme a senha</span><input id="invitePasswordConfirm" type="password" minlength="8" autocomplete="new-password" required /></label>
+        <p class="auth-status" id="invitePasswordStatus" role="status" aria-live="polite"></p>
+        <button class="button button-primary auth-submit" type="submit" id="invitePasswordSubmit">Salvar senha e entrar</button>
+      </form>
+    </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" crossorigin="anonymous"></script>
-    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js?v=beta-auth-1"></script>
+    <script src="app.js?v=beta-auth-1"></script>
   </body>
 </html>
 
