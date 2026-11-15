@@ -25,6 +25,9 @@
   let barcodeDetector = null;
   let lastScanAt = 0;
   let pdfJsPromise = null;
+  let tesseractScriptPromise = null;
+  let ocrWorkerPromise = null;
+  let activeOcrProgress = null;
   const scanCanvas = document.createElement("canvas");
   const scanContext = scanCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -304,6 +307,28 @@
     const total = $$(".item-price", $("#itemRows")).reduce((sum, input) => sum + (Number(input.value) || 0), 0);
     $("#receiptTotal").textContent = money(total);
   }
+  function setProcessing(percent, message, title = "Lendo nota", isError = false) {
+    const panel = $("#processingPanel");
+    const value = Math.max(0, Math.min(100, Math.round(percent)));
+    panel.hidden = false;
+    panel.dataset.error = String(isError);
+    $("#processingTitle").textContent = title;
+    $("#processingMessage").textContent = message;
+    $("#processingPercent").textContent = `${value}%`;
+    $("#processingBar").style.width = `${value}%`;
+  }
+  function resetProcessing() {
+    const panel = $("#processingPanel");
+    panel.hidden = true;
+    panel.dataset.error = "false";
+    $("#processingTitle").textContent = "Lendo nota";
+    $("#processingMessage").textContent = "Preparando arquivo…";
+    $("#processingPercent").textContent = "0%";
+    $("#processingBar").style.width = "0%";
+    $("#ocrTextDetails").hidden = true;
+    $("#ocrTextDetails").open = false;
+    $("#ocrTextOutput").textContent = "";
+  }
   function resetForm() {
     $("#receiptForm").reset();
     $("#receiptId").value = "";
@@ -312,6 +337,7 @@
     $("#qrInput").value = "";
     $("#receiptDialogTitle").textContent = "Adicionar compra";
     $("#openConsultation").hidden = true;
+    resetProcessing();
     addItemRow();
   }
   function openReceipt(id = "", focusStore = true) {
@@ -519,7 +545,7 @@
     }
     return pdfJsPromise;
   }
-  async function findQrInPdf(file) {
+  async function findQrInPdf(file, onProgress = () => {}) {
     if (!("jsQR" in window) && !("BarcodeDetector" in window)) {
       throw new Error("O leitor QR não carregou. Confira sua conexão e tente novamente.");
     }
@@ -532,6 +558,7 @@
     const pagesToScan = Math.min(pdf.numPages, 10);
     try {
       for (let pageNumber = 1; pageNumber <= pagesToScan; pageNumber += 1) {
+        onProgress(pageNumber, pagesToScan);
         const page = await pdf.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
         const scale = Math.min(2, 1400 / baseViewport.width, 1800 / baseViewport.height);
@@ -552,7 +579,216 @@
       await pdf.destroy();
     }
   }
-  async function handleReceiptUpload(file) {
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (!tesseractScriptPromise) {
+      tesseractScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js";
+        script.async = true;
+        script.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error("O leitor de texto não carregou."));
+        script.onerror = () => reject(new Error("Não foi possível carregar o leitor de texto."));
+        document.head.appendChild(script);
+      }).catch((error) => {
+        tesseractScriptPromise = null;
+        throw error;
+      });
+    }
+    return tesseractScriptPromise;
+  }
+  async function getOcrWorker(onProgress) {
+    activeOcrProgress = onProgress;
+    if (!ocrWorkerPromise) {
+      const tesseract = await loadTesseract();
+      ocrWorkerPromise = tesseract.createWorker("por", 1, {
+        logger: (message) => activeOcrProgress?.(message)
+      }).catch((error) => {
+        ocrWorkerPromise = null;
+        throw error;
+      });
+    }
+    return ocrWorkerPromise;
+  }
+  async function imageFileToCanvas(file) {
+    let source = null;
+    let objectUrl = "";
+    try {
+      if (window.createImageBitmap) source = await createImageBitmap(file);
+      else {
+        objectUrl = URL.createObjectURL(file);
+        source = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error("O navegador não conseguiu abrir esta imagem."));
+          image.src = objectUrl;
+        });
+      }
+      const width = source.width || source.naturalWidth;
+      const height = source.height || source.naturalHeight;
+      if (!width || !height) throw new Error("A imagem não tem um tamanho válido.");
+      const scale = Math.min(1, 2400 / Math.max(width, height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("Não foi possível preparar a imagem.");
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      return {
+        canvas,
+        cleanup: () => {
+          source?.close?.();
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+      };
+    } catch (error) {
+      source?.close?.();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      throw error;
+    }
+  }
+  function parseBrazilianNumber(value) {
+    const normalized = String(value || "").replace(/[^\d,.-]/g, "");
+    if (!normalized) return 0;
+    const number = normalized.includes(",") ? normalized.replace(/\./g, "").replace(",", ".") : normalized;
+    return Number(number) || 0;
+  }
+  function normalizeOcrUnit(value) {
+    const unit = String(value || "").toLocaleLowerCase("pt-BR").replace(/\./g, "");
+    if (["kg", "quilo", "quilos"].includes(unit)) return "kg";
+    if (["g", "gr", "grama", "gramas"].includes(unit)) return "g";
+    if (["l", "lt", "litro", "litros"].includes(unit)) return "L";
+    if (["ml", "mililitro", "mililitros"].includes(unit)) return "ml";
+    return "un";
+  }
+  function parseOcrItemLine(line) {
+    const excluded = /\b(total|subtotal|pagamento|troco|desconto|tributos|impostos|chave|acesso|cnpj|cpf|consumidor|autorizacao|protocolo|documento|danfe|nfce|consulta|valor aproximado|forma de pagamento)\b/i;
+    if (excluded.test(line)) return null;
+    const prices = [...line.matchAll(/(?:R\s*\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/g)];
+    if (!prices.length) return null;
+    const finalPrice = prices.at(-1);
+    const prefix = line.slice(0, finalPrice.index).trim();
+    const quantityUnits = [...prefix.matchAll(/(\d+(?:[,.]\d{1,3})?)\s*(kg|g|l|lt|ml|unid|und|un|pc|pct|pç|cx|fd|dz)\b/gi)];
+    let namePart = prefix;
+    let quantity = 1;
+    let unit = "un";
+    const quantityUnit = quantityUnits.at(-1);
+    if (quantityUnit) {
+      quantity = parseBrazilianNumber(quantityUnit[1]);
+      unit = normalizeOcrUnit(quantityUnit[2]);
+      namePart = prefix.slice(0, quantityUnit.index).trim();
+    } else {
+      const quantityTimes = prefix.match(/(\d+(?:[,.]\d{1,3})?)\s*[xX]\s*$/);
+      if (quantityTimes) {
+        quantity = parseBrazilianNumber(quantityTimes[1]);
+        namePart = prefix.slice(0, quantityTimes.index).trim();
+      }
+    }
+    const tokens = namePart.split(/\s+/).filter(Boolean);
+    while (tokens.length > 1 && /^\d{1,3}$/.test(tokens[0])) tokens.shift();
+    while (tokens.length > 1 && /^\d{6,14}$/.test(tokens[0])) tokens.shift();
+    const name = tokens.join(" ").replace(/^[|:;,.\-\s]+|[|:;,.\-\s]+$/g, "").trim();
+    const price = parseBrazilianNumber(finalPrice[1]);
+    if (name.length < 3 || !/[A-Za-zÀ-ÿ]/.test(name) || !(quantity > 0) || !(price > 0)) return null;
+    return { name, quantity, unit, price, category: guessCategory(name) };
+  }
+  function parseReceiptOcr(text) {
+    const lines = String(text || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const ignoreStoreLine = /\b(danfe|documento auxiliar|nota fiscal|nfce|cupom fiscal|consumidor|cnpj|cpf|consulta|sefaz|chave de acesso|protocolo|serie|série)\b/i;
+    const store = lines.slice(0, 14).find((line) => line.length > 2 && line.length <= 90 && /[A-Za-zÀ-ÿ]{3}/.test(line) && !ignoreStoreLine.test(line)) || "";
+    const dateMatch = String(text || "").match(/\b([0-3]?\d)[/.\-]([01]?\d)[/.\-](20\d{2})\b/);
+    let date = "";
+    if (dateMatch) {
+      const day = Number(dateMatch[1]);
+      const month = Number(dateMatch[2]);
+      const year = Number(dateMatch[3]);
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12) date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+    const items = [];
+    const seen = new Set();
+    for (let index = 0; index < lines.length; index += 1) {
+      const current = parseOcrItemLine(lines[index]);
+      const combined = current ? null : parseOcrItemLine(`${lines[index]} ${lines[index + 1] || ""}`);
+      const item = current || combined;
+      if (!item) continue;
+      const key = normalizeName(item.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+      if (items.length >= 60) break;
+    }
+    const keyMatch = String(text || "").match(/\b\d{44}\b/);
+    return { store, date, items, accessKey: keyMatch?.[0] || "" };
+  }
+  function applyOcrReceipt(text, qrValue) {
+    const parsed = parseReceiptOcr(text);
+    if (parsed.store) $("#storeInput").value = parsed.store;
+    if (parsed.date) $("#dateInput").value = parsed.date;
+    if (qrValue || parsed.accessKey) applyQrValue(qrValue || parsed.accessKey);
+    if (parsed.items.length) {
+      $("#itemRows").innerHTML = "";
+      parsed.items.forEach((item) => addItemRow(item));
+      updateFormTotal();
+    }
+    $("#ocrTextOutput").textContent = String(text || "").trim().slice(0, 12000);
+    $("#ocrTextDetails").hidden = !String(text || "").trim();
+    return parsed;
+  }
+  function ocrProgressPercent(message) {
+    const status = String(message.status || "").toLowerCase();
+    const progress = Math.max(0, Math.min(1, Number(message.progress) || 0));
+    if (status.includes("loading tesseract core")) return 5 + progress * 12;
+    if (status.includes("loading language")) return 17 + progress * 35;
+    if (status.includes("initializ")) return 52 + progress * 10;
+    if (status.includes("recogniz")) return 62 + progress * 34;
+    return 12 + progress * 80;
+  }
+  function ocrProgressLabel(message) {
+    const status = String(message.status || "").toLowerCase();
+    if (status.includes("loading tesseract core")) return "Carregando leitor de texto…";
+    if (status.includes("loading language")) return "Preparando o idioma português…";
+    if (status.includes("initializ")) return "Preparando leitura…";
+    if (status.includes("recogniz")) return "Lendo os itens da nota…";
+    return "Preparando leitura da nota…";
+  }
+  async function handlePhotoUpload(file) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showToast("Escolha uma imagem JPG, PNG ou WEBP.");
+      return;
+    }
+    openReceipt("", false);
+    setProcessing(2, "Abrindo a foto…");
+    let image = null;
+    let highestProgress = 20;
+    try {
+      image = await imageFileToCanvas(file);
+      setProcessing(12, "Procurando o QR code…");
+      const qrValue = await decodeImageSource(image.canvas);
+      if (qrValue) applyQrValue(qrValue);
+      setProcessing(20, "Carregando o leitor de texto…");
+      const worker = await getOcrWorker((message) => {
+        highestProgress = Math.max(highestProgress, ocrProgressPercent(message));
+        setProcessing(highestProgress, ocrProgressLabel(message));
+      });
+      const result = await worker.recognize(image.canvas);
+      setProcessing(Math.max(95, highestProgress), "Organizando os dados reconhecidos…");
+      const parsed = applyOcrReceipt(result.data.text, qrValue);
+      const itemMessage = parsed.items.length
+        ? `${parsed.items.length} itens reconhecidos. Confira os campos antes de salvar.`
+        : "Texto lido. Confira o estabelecimento e cadastre os itens abaixo.";
+      setProcessing(100, itemMessage, "Leitura concluída");
+      showToast(qrValue ? "QR e texto da nota lidos. Revise os dados." : "Texto da nota lido. Revise os dados.");
+    } catch (error) {
+      setProcessing(Math.max(20, highestProgress), error.message || "Não foi possível interpretar esta foto.", "Leitura incompleta", true);
+      showToast("Não foi possível interpretar a foto. Confira a conexão e tente outra imagem.");
+    } finally {
+      image?.cleanup?.();
+      setTimeout(() => $("#storeInput").focus(), 80);
+    }
+  }
+  async function handlePdfUpload(file) {
     if (!file) return;
     if (isMobileDevice) {
       showToast("No celular, use Escanear nota para abrir a câmera.");
@@ -563,16 +799,22 @@
       return;
     }
     openReceipt("", false);
-    showToast("Lendo o PDF da nota…");
+    setProcessing(2, "Abrindo o PDF…");
     try {
-      const result = await findQrInPdf(file);
+      const result = await findQrInPdf(file, (pageNumber, pageCount) => {
+        const progress = 10 + (pageNumber / pageCount) * 78;
+        setProcessing(progress, `Procurando QR code na página ${pageNumber} de ${pageCount}…`);
+      });
       if (result.qrValue) {
         applyQrValue(result.qrValue);
+        setProcessing(100, `QR code encontrado na página ${result.pageNumber}. Confira os itens abaixo.`, "Leitura concluída");
         showToast(`QR encontrado na página ${result.pageNumber}. Confira e inclua os itens.`);
       } else {
+        setProcessing(100, `QR não encontrado nas ${result.scannedPages} páginas analisadas.`, "Leitura concluída");
         showToast(`QR não encontrado nas ${result.scannedPages} páginas analisadas; preencha os dados manualmente.`);
       }
     } catch (error) {
+      setProcessing(100, "Não foi possível abrir este PDF. Tente novamente ou cadastre os dados manualmente.", "Leitura incompleta", true);
       showToast("Não foi possível ler esse PDF. Confira sua conexão e tente novamente.");
     } finally {
       setTimeout(() => $("#storeInput").focus(), 80);
@@ -588,10 +830,15 @@
   function bindEvents() {
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPage(button.dataset.view)));
     $("#addReceiptButton").addEventListener("click", beginPurchaseCapture);
+    $("#photoUploadInput").addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (file) handlePhotoUpload(file);
+    });
     $("#receiptUploadInput").addEventListener("change", (event) => {
       const file = event.target.files?.[0];
       event.target.value = "";
-      if (file) handleReceiptUpload(file);
+      if (file) handlePdfUpload(file);
     });
     $("#receiptForm").addEventListener("submit", handleReceiptSubmit);
     $("#addItemButton").addEventListener("click", () => addItemRow());
