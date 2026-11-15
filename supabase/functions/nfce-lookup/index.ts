@@ -118,7 +118,7 @@ function parseReceipt(lines: string[], sourceUrl: URL) {
       || "";
     const quantity = parseBrazilianNumber(quantityMatch[1]);
     const unitMatch = block.match(/\bUN\s*:\s*([A-Za-z]{1,6})\b/i);
-    const totalMatch = block.match(/(?:Vl\.?\s*Total|Valor\s+Total)\s*:?\s*(?:R\$\s*)?([\d.]+(?:,\d{1,4})?)/i);
+    const totalMatch = block.match(/(?:Vl\.?\s*Total|Vlr\.?\s*Total|Valor\s+Total)[\s\S]{0,40}?(?:R\$\s*)?([\d.]+(?:,\d{1,4})?)/i);
     const price = totalMatch ? parseBrazilianNumber(totalMatch[1]) : 0;
     if (!name || name.length < 3 || !/[A-Za-zÀ-ÿ]/.test(name) || !(quantity > 0) || !(price > 0)) return [];
     return [{
@@ -135,7 +135,9 @@ function parseReceipt(lines: string[], sourceUrl: URL) {
     || fullText.match(/Valor\s+Total\s*(?:R\$\s*)?:?\s*([\d.]+,\d{2})/i);
   const receiptTotal = payableMatch ? parseBrazilianNumber(payableMatch[1]) : 0;
   const cnpjIndex = lines.findIndex((line) => /\bCNPJ\s*:/i.test(line));
-  const store = cnpjIndex > 0 ? lines[cnpjIndex - 1].replace(/\s+/g, " ").trim() : "";
+  const cnpjLineStore = cnpjIndex >= 0 ? lines[cnpjIndex].split(/\bCNPJ\s*:/i)[0].trim() : "";
+  const store = (cnpjLineStore || (cnpjIndex > 0 ? lines[cnpjIndex - 1] : ""))
+    .replace(/\s+/g, " ").trim();
   const dateMatch = fullText.match(/(?:Emiss[aã]o|Data\/Hora)\s*:?\s*([0-3]?\d)[/.-]([01]?\d)[/.-](20\d{2})/i);
   const date = dateMatch
     ? dateMatch[3] + "-" + dateMatch[2].padStart(2, "0") + "-" + dateMatch[1].padStart(2, "0")
@@ -143,12 +145,14 @@ function parseReceipt(lines: string[], sourceUrl: URL) {
   const accessKey = sourceUrl.searchParams.get("p")?.match(/\d{44}/)?.[0] || "";
   const itemSum = items.reduce((sum, item) => sum + item.price, 0);
   const countMatches = !expectedItemCount || expectedItemCount === items.length;
-  const hasUsefulData = Boolean(store && items.length && receiptTotal > 0);
-  const plausibleTotal = !receiptTotal || Math.abs(itemSum - receiptTotal) <= Math.max(10, receiptTotal * 0.15);
-
-  if (!hasUsefulData || !countMatches || !plausibleTotal) {
-    throw new Error("A consulta da SEFAZ abriu, mas não consegui confirmar todos os itens da nota.");
+  if (!store) throw new Error("A consulta da SEFAZ abriu, mas não encontrei o nome do mercado.");
+  if (!items.length) throw new Error("A consulta da SEFAZ abriu, mas não encontrei os itens. Confira se a nota está disponível na consulta pública.");
+  if (expectedItemCount && !countMatches) {
+    throw new Error(`A nota informa ${expectedItemCount} itens, mas consegui reconhecer ${items.length}. Não preenchi a lista para evitar dados incompletos.`);
   }
+  if (!(receiptTotal > 0)) throw new Error("Encontrei os itens, mas não reconheci o total da nota.");
+  const plausibleTotal = Math.abs(itemSum - receiptTotal) <= Math.max(10, receiptTotal * 0.15);
+  if (!plausibleTotal) throw new Error("Os valores dos itens não conferem com o total da nota. Não preenchi para evitar valores incorretos.");
   return { store, date, items, expectedItemCount, total: receiptTotal, accessKey };
 }
 
