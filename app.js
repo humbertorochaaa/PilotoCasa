@@ -588,7 +588,6 @@
   function bindEvents() {
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPage(button.dataset.view)));
     $("#addReceiptButton").addEventListener("click", beginPurchaseCapture);
-    $("#uploadReceiptButton").addEventListener("click", () => $("#receiptUploadInput").click());
     $("#receiptUploadInput").addEventListener("change", (event) => {
       const file = event.target.files?.[0];
       event.target.value = "";
