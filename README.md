@@ -1,6 +1,6 @@
 # Despensa — piloto da casa
 
-Protótipo para acompanhar compras e reposição durante um piloto de 35 dias.
+Protótipo para acompanhar compras, consumo e reposição durante um piloto de 35 dias.
 
 ## Leitura das notas
 
@@ -8,18 +8,16 @@ Em qualquer dispositivo, use **Enviar foto** para selecionar uma imagem. O app p
 
 As imagens são processadas no aparelho e não são enviadas nem guardadas. O OCR e a leitura de QR precisam de internet para carregar as bibliotecas; o progresso e qualquer falha aparecem no formulário.
 
-## Beta compartilhado e administração
+## Banco compartilhado, logins e administração
 
-Sem uma configuração Supabase, o piloto continua no modo local: as notas ficam só naquele navegador. Para duas ou mais pessoas verem o mesmo histórico e usar logins, configure um projeto Supabase:
+Sem Supabase configurado, o piloto continua no modo local: as notas ficam só naquele navegador. O banco compartilhado ativa login por e-mail, sincronização entre participantes, seleção de meses anteriores, auditoria e exclusão administrativa de notas.
 
-1. Crie um projeto no Supabase e copie a **Project URL** e a chave **anon/publishable** para `supabase-config.js`. Essa chave pública é protegida pelas políticas de acesso do banco. Nunca coloque uma `service_role` ou `secret key` nesse arquivo.
-2. No painel do Supabase, abra **SQL Editor** e execute `supabase/schema.sql`.
-3. Crie seu próprio usuário em **Authentication → Users**. Em `supabase/bootstrap-admin.sql`, troque `SEU_EMAIL_AQUI` pelo e-mail exato e rode esse arquivo uma vez.
-4. Em **Authentication → URL Configuration**, use `https://humbertorochaaa.github.io/PilotoCasa/` como Site URL e permita `https://humbertorochaaa.github.io/PilotoCasa/?flow=invite` como Redirect URL.
-5. Instale/abra a Supabase CLI, conecte o projeto e publique `supabase/functions/admin-create-user`. Configure `APP_URL=https://humbertorochaaa.github.io/PilotoCasa/?flow=invite` como secret da função. A função usa `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` apenas no servidor Supabase.
-6. Configure o provedor de e-mail no Supabase. Entre em `admin.html` com seu login, envie o convite ao participante e acompanhe as alterações na área **Auditoria**.
+1. No Supabase, copie a **Project URL** e a chave pública **Publishable** (ou a chave pública `anon` em projetos antigos). Coloque os valores em `supabase-config.js`. Nunca coloque uma `service_role` ou chave `secret` nesse arquivo.
+2. A integração GitHub já está configurada para este repositório, diretório `.` e branch `main`. Ao receber este commit, ela deve aplicar `supabase/migrations/20261115190000_shared_beta_schema.sql` e publicar a Edge Function declarada em `supabase/config.toml`.
+3. No Supabase, abra **Authentication → Users** e crie seu usuário administrador com seu e-mail e uma senha temporária privada. Depois abra **SQL Editor**, copie `supabase/bootstrap-admin.sql`, troque `SEU_EMAIL_AQUI` pelo e-mail do administrador e execute uma vez.
+4. Abra `index.html`, entre com e-mail e senha, e defina sua nova senha. Depois abra `admin.html` e use **Criar login** para adicionar participantes. A senha temporária é entregue diretamente à pessoa; no primeiro acesso, ela terá de escolher outra senha. O painel permite editar usuário, e-mail e senha temporária, remover participantes, auditar mudanças e excluir notas.
 
-O convite cria uma conta de participante e concede acesso ao histórico da casa; no primeiro acesso, a pessoa define a própria senha. O site usa a sessão Supabase e grava as compras em uma linha compartilhada, protegida por Row Level Security. Se já houver compras locais no navegador do administrador e o histórico compartilhado estiver vazio, elas são migradas no primeiro login. A auditoria registra convites e IDs de notas adicionadas, alteradas ou removidas; não guarda foto da nota.
+O site usa o usuário conectado para identificar a casa; tabelas são protegidas por Row Level Security. A chave administrativa fica apenas no servidor Supabase. O histórico de recibos é compartilhado em uma linha por casa, e alterações nas notas são registradas em auditoria sem guardar as imagens.
 
 ## Uso local
 
