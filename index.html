@@ -48,7 +48,8 @@
           </div>
           <div class="top-actions">
             <span class="today-pill" id="todayLabel"></span>
-            <label class="button button-outline pdf-upload-label" id="uploadReceiptButton"><span class="upload-icon">↑</span> Enviar PDF<input id="receiptUploadInput" type="file" accept="application/pdf,.pdf" aria-label="Escolher PDF da nota" /></label>
+            <label class="button button-outline file-upload-label" id="uploadPhotoButton"><span class="upload-icon">↑</span> Enviar foto<input id="photoUploadInput" type="file" accept="image/*" aria-label="Escolher foto da nota" /></label>
+            <label class="button button-outline file-upload-label" id="uploadReceiptButton"><span class="upload-icon">↑</span> Enviar PDF<input id="receiptUploadInput" type="file" accept="application/pdf,.pdf" aria-label="Escolher PDF da nota" /></label>
             <button class="button button-primary" id="addReceiptButton" type="button"><span class="plus">▦</span> Escanear nota</button>
           </div>
         </header>
@@ -161,15 +162,20 @@
           <label class="field"><span>Data da compra</span><input id="dateInput" type="date" required /></label>
         </div>
         <div class="qr-field">
-          <div class="qr-field-copy"><span class="qr-small-icon">▦</span><div><strong>QR code da nota</strong><small>O QR guarda a chave; confira e lance os itens abaixo.</small></div></div>
+          <div class="qr-field-copy"><span class="qr-small-icon">▦</span><div><strong>QR e leitura da nota</strong><small>Confira o que foi reconhecido antes de salvar.</small></div></div>
           <div class="qr-actions"><button class="button button-outline button-small" id="openQrScanner" type="button">Ler QR code</button><input id="qrInput" type="text" placeholder="Link ou chave de acesso (opcional)" aria-label="Link ou chave de acesso da nota" /><button class="button-link" type="button" id="openConsultation" hidden>Abrir consulta ↗</button></div>
+        </div>
+        <div class="processing-panel" id="processingPanel" hidden aria-live="polite">
+          <div class="processing-head"><div><strong id="processingTitle">Lendo nota</strong><small id="processingMessage">Preparando arquivo…</small></div><span id="processingPercent">0%</span></div>
+          <div class="processing-track"><span id="processingBar"></span></div>
+          <details id="ocrTextDetails" hidden><summary>Ver texto reconhecido</summary><pre id="ocrTextOutput"></pre></details>
         </div>
         <div class="items-heading"><div><p class="section-kicker">ITENS DA NOTA</p><h3>O que vocês compraram?</h3></div><button class="button button-outline button-small" id="addItemButton" type="button">＋ Adicionar item</button></div>
         <div class="item-column-labels"><span>PRODUTO</span><span>QTD.</span><span>UNIDADE</span><span>PREÇO TOTAL</span><span></span></div>
         <div id="itemRows" class="item-rows"></div>
         <div class="dialog-total"><span>Total desta compra</span><strong id="receiptTotal">R$ 0,00</strong></div>
         <div class="dialog-footer"><button class="button button-quiet" type="button" data-close-dialog>Cancelar</button><button class="button button-primary" type="submit">Salvar compra <span>→</span></button></div>
-        <p class="privacy-note"><span>🔒</span> As informações ficam salvas apenas neste navegador. Não inclua CPF no campo do QR code.</p>
+        <p class="privacy-note"><span>🔒</span> Fotos e PDFs são processados no navegador. Os dados salvos ficam apenas neste navegador. Não inclua CPF no campo do QR code.</p>
       </form>
     </dialog>
 
