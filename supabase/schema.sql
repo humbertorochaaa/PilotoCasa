@@ -10,12 +10,24 @@ create table if not exists public.households (
 create table if not exists public.household_members (
   household_id uuid not null references public.households(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
+  username text not null,
   email text not null,
   role text not null check (role in ('admin', 'member')),
   created_at timestamptz not null default now(),
   primary key (household_id, user_id),
-  unique (household_id, email)
+  unique (household_id, email),
+  unique (household_id, username)
 );
+
+-- Atualiza instalações anteriores que ainda não guardavam o nome de usuário.
+alter table public.household_members add column if not exists username text;
+update public.household_members
+set username = left(coalesce(nullif(lower(regexp_replace(split_part(email, '@', 1), '[^a-z0-9_]+', '_', 'g')), ''), 'user'), 23)
+  || '_' || substring(md5(user_id::text), 1, 8)
+where username is null;
+alter table public.household_members alter column username set not null;
+create unique index if not exists household_members_household_username_uidx
+  on public.household_members (household_id, username);
 
 create table if not exists public.household_state (
   household_id uuid primary key references public.households(id) on delete cascade,
