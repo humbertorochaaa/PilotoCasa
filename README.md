@@ -4,7 +4,7 @@ Protótipo para acompanhar compras, consumo e reposição durante um piloto de 3
 
 ## Leitura das notas
 
-Em qualquer dispositivo, use **Enviar foto** para selecionar uma imagem. O app procura o QR code e usa OCR em português para sugerir mercado, data e itens. No desktop, **Enviar PDF** procura o QR code nas primeiras dez páginas. No celular, **Escanear nota** abre a câmera. Confira os campos reconhecidos antes de salvar.
+Em qualquer dispositivo, use **Enviar foto** para selecionar uma imagem. O app procura o QR code e usa OCR em português para sugerir mercado, data e itens. Ao usar **Escanear nota**, enquadre a nota inteira e mantenha o QR visível: a câmera lê o QR e tenta reconhecer o texto no mesmo quadro. O QR identifica a consulta fiscal; os produtos e o estabelecimento são reconhecidos pelo texto da nota. No desktop, **Enviar PDF** procura o QR code nas primeiras dez páginas. Confira os campos reconhecidos antes de salvar.
 
 As imagens são processadas no aparelho e não são enviadas nem guardadas. O OCR e a leitura de QR precisam de internet para carregar as bibliotecas; o progresso e qualquer falha aparecem no formulário.
 
