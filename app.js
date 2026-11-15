@@ -59,7 +59,9 @@
     const found = categories.slice(0, -1).find((category) => category.words.some((word) => normalized.includes(normalizeName(word))));
     return found?.id || "outros";
   };
-  const receiptTotal = (receipt) => (receipt.items || []).reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+  const receiptTotal = (receipt) => Number.isFinite(Number(receipt.total))
+    ? Number(receipt.total)
+    : (receipt.items || []).reduce((sum, item) => sum + (Number(item.price) || 0), 0);
 
   function loadState() {
     try {
@@ -454,7 +456,10 @@
     updateFormTotal();
   }
   function updateFormTotal() {
-    const total = $$(".item-price", $("#itemRows")).reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+    const override = $("#receiptTotalOverride").value;
+    const total = override !== ""
+      ? Number(override) || 0
+      : $$(".item-price", $("#itemRows")).reduce((sum, input) => sum + (Number(input.value) || 0), 0);
     $("#receiptTotal").textContent = money(total);
   }
   function setProcessing(percent, message, title = "Lendo nota", isError = false) {
@@ -502,6 +507,7 @@
       $("#cityInput").value = receipt.city || "";
       $("#dateInput").value = receipt.date;
       $("#qrInput").value = receipt.qrData || "";
+      $("#receiptTotalOverride").value = receipt.total ?? "";
       $("#itemRows").innerHTML = "";
       (receipt.items || []).forEach((item) => addItemRow(item));
       if (!receipt.items?.length) addItemRow();
@@ -555,6 +561,9 @@
       city: $("#cityInput").value.trim(),
       qrData: $("#qrInput").value.trim(),
       items,
+      total: $("#receiptTotalOverride").value !== ""
+        ? Number($("#receiptTotalOverride").value)
+        : items.reduce((sum, item) => sum + item.price, 0),
       createdAt: existing?.createdAt || new Date().toISOString()
     };
     selectedDashboardMonth = receipt.date.slice(0, 7);
@@ -730,12 +739,44 @@
     context.putImageData(imageData, 0, 0);
     return canvas;
   }
-  function onQrRead(value) {
+  async function lookupNfceReceipt(qrValue) {
+    if (!cloud.client) throw new Error("A consulta automática da SEFAZ não está conectada.");
+    const { data, error } = await cloud.client.functions.invoke("nfce-lookup", { body: { qrValue } });
+    if (error || data?.error) throw new Error(data?.error || error?.message || "A consulta automática não respondeu.");
+    if (!data?.receipt || !Array.isArray(data.receipt.items) || !data.receipt.items.length) {
+      throw new Error("A SEFAZ não retornou os itens dessa nota.");
+    }
+    return data.receipt;
+  }
+  function applyNfceReceipt(receipt) {
+    if (receipt.store) $("#storeInput").value = receipt.store;
+    if (receipt.date && /^\d{4}-\d{2}-\d{2}$/.test(receipt.date)) $("#dateInput").value = receipt.date;
+    $("#itemRows").innerHTML = "";
+    $("#receiptTotalOverride").value = Number.isFinite(Number(receipt.total)) ? String(receipt.total) : "";
+    receipt.items.forEach((item) => addItemRow({
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      price: item.price,
+      category: guessCategory(item.name)
+    }));
+    updateFormTotal();
+    $("#ocrTextDetails").hidden = true;
+  }
+  async function onQrRead(value) {
     stopScanner();
     $("#scannerDialog").close();
     applyQrValue(value);
-    setProcessing(100, "QR lido. Para reconhecer o mercado e os produtos, toque em Usar foto e selecione uma foto nítida da nota inteira.", "QR reconhecido", false);
-    showToast("QR lido. Agora use a foto da nota para preencher os itens.");
+    setProcessing(18, "Consultando os dados da nota na SEFAZ…", "Buscando produtos");
+    try {
+      const receipt = await lookupNfceReceipt(value);
+      applyNfceReceipt(receipt);
+      setProcessing(100, receipt.items.length + " itens importados de " + receipt.store + ". Confira a lista antes de salvar.", "Itens importados da SEFAZ");
+      showToast(receipt.items.length + " itens importados. Confira antes de salvar.");
+    } catch (error) {
+      setProcessing(100, (error.message || "Não consegui importar os itens.") + " Use Usar foto para tentar a leitura da imagem.", "Consulta automática indisponível", true);
+      showToast("O QR foi lido, mas não deu para importar os itens. Tente Usar foto.");
+    }
   }
   function applyQrValue(value) {
     $("#qrInput").value = value;
@@ -1013,6 +1054,7 @@
       && hasValidationAnchor;
     if (itemsAreComplete) {
       $("#itemRows").innerHTML = "";
+      $("#receiptTotalOverride").value = parsed.receiptTotal > 0 ? String(parsed.receiptTotal) : "";
       parsed.items.forEach((item) => addItemRow(item));
       updateFormTotal();
     }
@@ -1057,11 +1099,25 @@
       setProcessing(12, "Procurando o QR code…");
       const qrDetails = await decodeImageDetails(image.canvas);
       const qrValue = qrDetails?.value || previousQrValue;
-      if (qrValue) applyQrValue(qrValue);
-      setProcessing(18, "Recortando e melhorando a foto…");
+      if (qrValue) {
+        applyQrValue(qrValue);
+        setProcessing(18, "Buscando os itens na consulta da SEFAZ…");
+        try {
+          const receipt = await lookupNfceReceipt(qrValue);
+          applyNfceReceipt(receipt);
+          setProcessing(100, receipt.items.length + " itens importados de " + receipt.store + ". Confira a lista antes de salvar.", "Itens importados da SEFAZ");
+          showToast(receipt.items.length + " itens importados. Confira antes de salvar.");
+          return;
+        } catch (error) {
+          setProcessing(24, "A consulta automática não trouxe os itens. Preparando a foto para o OCR…");
+        }
+      } else {
+        setProcessing(18, "Recortando e melhorando a foto…");
+      }
+      setProcessing(24, "Recortando e melhorando a foto…");
       receiptCanvas = prepareReceiptCanvas(image.canvas, qrDetails?.rectangle);
       if (!receiptCanvas) throw new Error("Não foi possível preparar a foto. Tente escolher outra imagem.");
-      setProcessing(25, "Carregando o leitor de texto…");
+      setProcessing(30, "Carregando o leitor de texto…");
       const worker = await getOcrWorker((message) => {
         highestProgress = Math.max(highestProgress, ocrProgressPercent(message));
         setProcessing(highestProgress, ocrProgressLabel(message));
@@ -1133,6 +1189,20 @@
     $("#addReceiptButton").addEventListener("click", beginPurchaseCapture);
     $("#uploadPhotoButton").addEventListener("click", () => $("#photoUploadInput").click());
     $("#uploadReceiptButton").addEventListener("click", () => $("#receiptUploadInput").click());
+    $("#qrInput").addEventListener("change", async () => {
+      const value = $("#qrInput").value.trim();
+      updateConsultationLink();
+      if (!value.startsWith("https://")) return;
+      setProcessing(18, "Consultando os itens na SEFAZ…", "Buscando produtos");
+      try {
+        const receipt = await lookupNfceReceipt(value);
+        applyNfceReceipt(receipt);
+        setProcessing(100, receipt.items.length + " itens importados de " + receipt.store + ". Confira a lista antes de salvar.", "Itens importados da SEFAZ");
+        showToast(receipt.items.length + " itens importados. Confira antes de salvar.");
+      } catch (error) {
+        setProcessing(100, (error.message || "Não consegui importar os itens.") + " Tente Usar foto como alternativa.", "Consulta automática indisponível", true);
+      }
+    });
     $("#authForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!cloud.client) return;
@@ -1186,12 +1256,18 @@
       if (file) handlePdfUpload(file);
     });
     $("#receiptForm").addEventListener("submit", handleReceiptSubmit);
-    $("#addItemButton").addEventListener("click", () => addItemRow());
+    $("#addItemButton").addEventListener("click", () => {
+      $("#receiptTotalOverride").value = "";
+      addItemRow();
+    });
     $("#itemRows").addEventListener("input", (event) => {
       const row = event.target.closest(".item-row");
       if (!row) return;
       if (event.target.matches(".item-name") && row.dataset.categoryEdited !== "true") $(".item-category", row).value = guessCategory(event.target.value);
-      if (event.target.matches(".item-price")) updateFormTotal();
+      if (event.target.matches(".item-price")) {
+        $("#receiptTotalOverride").value = "";
+        updateFormTotal();
+      }
     });
     $("#itemRows").addEventListener("change", (event) => {
       const row = event.target.closest(".item-row");
@@ -1208,6 +1284,7 @@
           $(".item-price", row).value = "";
           $(".item-category", row).value = "outros";
         }
+        $("#receiptTotalOverride").value = "";
         updateFormTotal();
       }
     });
