@@ -9,6 +9,8 @@ const corsHeaders = {
 const allowedHosts = new Set([
   "nfce.fazenda.sp.gov.br",
   "www.nfce.fazenda.sp.gov.br",
+  "homologacao.nfce.fazenda.sp.gov.br",
+  "www.homologacao.nfce.fazenda.sp.gov.br",
 ]);
 
 function defaultKey(variable: string, mapVariable: string): string {
@@ -29,7 +31,15 @@ function isAllowedUrl(url: URL): boolean {
     && !url.username
     && !url.password
     && !url.port
-    && (path.includes("consultaqrcode") || path.endsWith("/consulta") || path.endsWith("/consulta/"));
+    && (
+      path.includes("consultaqrcode")
+      || path.endsWith("/consulta")
+      || path.endsWith("/consulta/")
+      || path.endsWith("/qrcode")
+      || path.endsWith("/qrcode/")
+      || path.endsWith("/nfceconsultapublica")
+      || path.endsWith("/nfceconsultapublica/")
+    );
 }
 
 function decodeEntities(value: string): string {
