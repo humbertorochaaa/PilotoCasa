@@ -745,8 +745,13 @@
     let responseError = data?.error;
     if (!responseError && error?.context && typeof error.context.clone === "function") {
       try {
-        const body = await error.context.clone().json();
-        responseError = body?.error || body?.message;
+        const responseText = await error.context.clone().text();
+        try {
+          const body = JSON.parse(responseText);
+          responseError = body?.error || body?.message;
+        } catch {
+          responseError = responseText.trim().slice(0, 280);
+        }
       } catch { /* Keep the SDK error when the response is not JSON. */ }
     }
     if (error || responseError) {
