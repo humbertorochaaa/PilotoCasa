@@ -701,12 +701,11 @@
       const parsed = applyOcrReceipt(result.data.text, value);
       if (parsed.itemsApplied) {
         const itemSummary = parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount} itens` : `${parsed.items.length} produtos`;
-        const storeSummary = parsed.store ? `Mercado: ${parsed.store}.` : "Mercado não reconhecido.";
+        const storeSummary = parsed.storeTrusted && parsed.store ? `Mercado: ${parsed.store}.` : "Mercado não reconhecido.";
         setProcessing(100, `${itemSummary} identificados. ${storeSummary} Confira tudo antes de salvar.`, "Leitura concluída");
         showToast(`${itemSummary} reconhecidos. Confira os dados da nota.`);
       } else {
-        const found = parsed.items.length ? `Encontrei ${parsed.expectedItemCount ? `${parsed.items.length} de ${parsed.expectedItemCount}` : parsed.items.length} linhas possíveis, mas não consegui confirmar a tabela completa. ` : "";
-        setProcessing(100, `QR lido. ${found}A quantidade e a soma dos produtos precisam bater com a nota. Não inseri itens para evitar valores errados. Use Usar foto com uma imagem nítida da tabela.`, "Leitura não confirmada", true);
+        setProcessing(100, "O QR foi lido, mas o quadro da câmera não ficou nítido para reconhecer a nota toda. Toque em Usar foto e escolha uma foto de perto, com a tabela inteira visível.", "Foto necessária para ler os itens", true);
         showToast("Não consegui confirmar os produtos. Use Usar foto com a nota inteira e nítida.");
       }
     } catch (error) {
@@ -908,8 +907,15 @@
       .map((line) => ({ line, normalized: normalizeName(line) }))
       .filter(({ line, normalized }) => {
         const words = normalized.match(/[a-z]{3,}/g) || [];
-        return line.length >= 5 && line.length <= 90 && words.length > 0 && !ignoreStoreLine.test(normalized)
-          && !/\d{3,}/.test(line) && !/\b[a-z]{3,}\s+\d{1,2}\s*$/.test(normalized);
+        const letters = line.match(/[A-Za-zÀ-ÿ]/g) || [];
+        const uppercase = letters.filter((character) => character === character.toLocaleUpperCase("pt-BR")).length;
+        const lowercase = letters.length - uppercase;
+        const mixedCaseNoise = words.length > 2
+          && uppercase / Math.max(letters.length, 1) > 0.3
+          && lowercase / Math.max(letters.length, 1) > 0.3;
+        return line.length >= 5 && line.length <= 90 && words.length >= 2 && words.length <= 6
+          && !ignoreStoreLine.test(normalized) && !/\d|[()[\]{}<>|]/.test(line)
+          && !mixedCaseNoise && !/\b[a-z]{3,}\s+\d{1,2}\s*$/.test(normalized);
       })
       .map(({ line, normalized }) => ({
         line,
@@ -925,6 +931,7 @@
     ];
     const knownStore = knownStores.find(([, pattern]) => pattern.test(normalizedReceipt))?.[0] || "";
     const store = knownStore || storeCandidates.sort((a, b) => b.score - a.score)[0]?.line || "";
+    const storeTrusted = Boolean(knownStore || store);
     const dateMatch = String(text || "").match(/\b([0-3]?\d)[/.\-]([01]?\d)[/.\-](20\d{2})\b/);
     let date = "";
     if (dateMatch) {
@@ -965,11 +972,11 @@
       if (items.length >= 60) break;
     }
     const keyMatch = String(text || "").match(/\b\d{44}\b/);
-    return { store, date, items, expectedItemCount, itemHeaderFound, receiptTotal, accessKey: keyMatch?.[0] || "" };
+    return { store, storeTrusted, date, items, expectedItemCount, itemHeaderFound, receiptTotal, accessKey: keyMatch?.[0] || "" };
   }
   function applyOcrReceipt(text, qrValue) {
     const parsed = parseReceiptOcr(text);
-    if (parsed.store) $("#storeInput").value = parsed.store;
+    if (parsed.storeTrusted && parsed.store) $("#storeInput").value = parsed.store;
     if (parsed.date) $("#dateInput").value = parsed.date;
     if (qrValue || parsed.accessKey) applyQrValue(qrValue || parsed.accessKey);
     const itemSum = parsed.items.reduce((sum, item) => sum + item.price, 0);
