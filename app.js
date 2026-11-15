@@ -12,12 +12,18 @@
     { id: "outros", label: "Outros", short: "Outros", color: "#a9b0aa", icon: "📦", words: [] }
   ];
   const unitOptions = ["kg", "g", "L", "ml", "un"];
-  const today = localDateString(new Date());
+  const today = (() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  })();
   const isMobileDevice = Boolean(navigator.userAgentData?.mobile)
     || /iPhone|iPod|Android.*Mobile|Windows Phone|Mobile/i.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   document.documentElement.classList.toggle("mobile-device", isMobileDevice);
   let state = loadState();
+  const cloud = { client: null, user: null, householdId: null, role: null, ready: false, saveChain: Promise.resolve(), channel: null };
+  let inviteFlow = new URLSearchParams(location.hash.slice(1)).get("type") === "invite"
+    || new URLSearchParams(location.search).get("flow") === "invite";
   let toastTimer;
   let scanStream = null;
   let scanActive = false;
@@ -64,6 +70,127 @@
   }
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (cloud.ready) persistCloudState();
+  }
+  async function persistCloudState() {
+    if (!cloud.ready || !cloud.client) return;
+    const snapshot = { pilotStart: state.pilotStart, pilotDays: PILOT_DAYS, receipts: state.receipts };
+    cloud.saveChain = cloud.saveChain.then(async () => {
+      const { error } = await cloud.client.from("household_state")
+        .update({ state: snapshot, updated_by: cloud.user.id })
+        .eq("household_id", cloud.householdId);
+      if (error) throw error;
+    }).catch((error) => {
+      showToast(`Não foi possível sincronizar: ${error.message || "erro de conexão"}`);
+    });
+    return cloud.saveChain;
+  }
+  function showAuthDialog(message = "") {
+    const dialog = $("#authDialog");
+    $("#authForm").hidden = false;
+    $("#invitePasswordForm").hidden = true;
+    $("#authTitle").textContent = "Entrar na Despensa";
+    $("#authStatus").textContent = message;
+    if (!dialog.open) dialog.showModal();
+  }
+  function promptInvitePassword(user) {
+    if (!user) return showAuthDialog("Abra novamente o link de convite enviado por e-mail.");
+    const dialog = $("#authDialog");
+    $("#authForm").hidden = true;
+    $("#invitePasswordForm").hidden = false;
+    $("#invitePasswordStatus").textContent = "";
+    if (!dialog.open) dialog.showModal();
+  }
+  async function activateCloudUser(user) {
+    if (!cloud.client || !user) return;
+    try {
+      const { data: membership, error: membershipError } = await cloud.client.from("household_members")
+        .select("household_id, role").eq("user_id", user.id).maybeSingle();
+      if (membershipError) throw membershipError;
+      if (!membership) throw new Error("Este login ainda não foi associado ao piloto. Peça um convite ao administrador.");
+      const { data: householdData, error: stateError } = await cloud.client.from("household_state")
+        .select("state").eq("household_id", membership.household_id).single();
+      if (stateError) throw stateError;
+      let sharedState = householdData?.state;
+      if (!sharedState || !Array.isArray(sharedState.receipts)) throw new Error("O histórico compartilhado ainda não foi preparado.");
+      if (membership.role === "admin" && sharedState.receipts.length === 0 && state.receipts.length > 0) {
+        const localSnapshot = { pilotStart: state.pilotStart || today, pilotDays: PILOT_DAYS, receipts: state.receipts };
+        const { error: migrationError } = await cloud.client.from("household_state")
+          .update({ state: localSnapshot, updated_by: user.id }).eq("household_id", membership.household_id);
+        if (migrationError) throw migrationError;
+        sharedState = localSnapshot;
+        showToast("As compras deste navegador foram levadas para o piloto compartilhado.");
+      }
+      cloud.user = user;
+      cloud.householdId = membership.household_id;
+      cloud.role = membership.role;
+      state = { pilotStart: sharedState.pilotStart || today, pilotDays: PILOT_DAYS, receipts: sharedState.receipts };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      cloud.ready = true;
+      $("#storageStatus").textContent = "Compras sincronizadas entre participantes.";
+      $("#adminNavLink").hidden = cloud.role !== "admin";
+      $("#signOutButton").hidden = false;
+      $("#authDialog").close();
+      renderDashboard();
+      const current = location.hash.slice(1);
+      if (current === "receipts") renderAllReceipts();
+      if (current === "products") renderProducts();
+      if (cloud.channel) await cloud.client.removeChannel(cloud.channel);
+      cloud.channel = cloud.client.channel(`household-state-${cloud.householdId}`)
+        .on("postgres_changes", {
+          event: "UPDATE", schema: "public", table: "household_state",
+          filter: `household_id=eq.${cloud.householdId}`
+        }, (payload) => {
+          if (payload.new.updated_by === cloud.user.id || !Array.isArray(payload.new.state?.receipts)) return;
+          state = { pilotStart: payload.new.state.pilotStart || today, pilotDays: PILOT_DAYS, receipts: payload.new.state.receipts };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          renderDashboard();
+          const activeView = location.hash.slice(1);
+          if (activeView === "receipts") renderAllReceipts();
+          if (activeView === "products") renderProducts();
+          showToast("Compras atualizadas por outro participante.");
+        }).subscribe();
+    } catch (error) {
+      cloud.ready = false;
+      showAuthDialog(error.message || "Não foi possível abrir os dados compartilhados.");
+    }
+  }
+  async function initCloudSync() {
+    const config = window.SUPABASE_CONFIG || {};
+    if (!config.url || !config.anonKey) return;
+    if (!window.supabase?.createClient) {
+      showAuthDialog("O serviço de login não carregou. Recarregue a página quando estiver conectado à internet.");
+      return;
+    }
+    cloud.client = window.supabase.createClient(config.url, config.anonKey);
+    cloud.client.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session?.user) setTimeout(() => inviteFlow ? promptInvitePassword(session.user) : activateCloudUser(session.user), 0);
+      if (event === "SIGNED_OUT") {
+        cloud.ready = false;
+        if (cloud.channel) cloud.client.removeChannel(cloud.channel);
+        cloud.channel = null;
+        cloud.user = null;
+        cloud.householdId = null;
+        cloud.role = null;
+        $("#adminNavLink").hidden = true;
+        $("#signOutButton").hidden = true;
+        $("#storageStatus").textContent = "Entre para abrir os dados compartilhados.";
+        showAuthDialog();
+      }
+    });
+    const { data, error } = await cloud.client.auth.getSession();
+    if (error) {
+      showAuthDialog("Não foi possível verificar o login. Atualize a página e tente novamente.");
+      return;
+    }
+    if (data.session?.user) {
+      if (inviteFlow) promptInvitePassword(data.session.user);
+      else await activateCloudUser(data.session.user);
+    }
+    else {
+      $("#storageStatus").textContent = "Entre para abrir os dados compartilhados.";
+      showAuthDialog();
+    }
   }
   function showToast(message) {
     const toast = $("#toast");
@@ -310,12 +437,14 @@
   function setProcessing(percent, message, title = "Lendo nota", isError = false) {
     const panel = $("#processingPanel");
     const value = Math.max(0, Math.min(100, Math.round(percent)));
+    const wasHidden = panel.hidden;
     panel.hidden = false;
     panel.dataset.error = String(isError);
     $("#processingTitle").textContent = title;
     $("#processingMessage").textContent = message;
     $("#processingPercent").textContent = `${value}%`;
     $("#processingBar").style.width = `${value}%`;
+    if (wasHidden) requestAnimationFrame(() => panel.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   }
   function resetProcessing() {
     const panel = $("#processingPanel");
@@ -687,7 +816,7 @@
     }
     const tokens = namePart.split(/\s+/).filter(Boolean);
     while (tokens.length > 1 && /^\d{1,3}$/.test(tokens[0])) tokens.shift();
-    while (tokens.length > 1 && /^\d{6,14}$/.test(tokens[0])) tokens.shift();
+    while (tokens.length > 1 && /^\d{4,14}$/.test(tokens[0])) tokens.shift();
     const name = tokens.join(" ").replace(/^[|:;,.\-\s]+|[|:;,.\-\s]+$/g, "").trim();
     const price = parseBrazilianNumber(finalPrice[1]);
     if (name.length < 3 || !/[A-Za-zÀ-ÿ]/.test(name) || !(quantity > 0) || !(price > 0)) return null;
@@ -754,15 +883,17 @@
   }
   async function handlePhotoUpload(file) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
+    const imageFile = file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif|avif)$/i.test(file.name || "");
+    if (!imageFile) {
       showToast("Escolha uma imagem JPG, PNG ou WEBP.");
       return;
     }
-    openReceipt("", false);
-    setProcessing(2, "Abrindo a foto…");
+    showToast("Foto recebida. Preparando a leitura da nota…");
     let image = null;
     let highestProgress = 20;
     try {
+      openReceipt("", false);
+      setProcessing(2, "Abrindo a foto…");
       image = await imageFileToCanvas(file);
       setProcessing(12, "Procurando o QR code…");
       const qrValue = await decodeImageSource(image.canvas);
@@ -781,8 +912,10 @@
       setProcessing(100, itemMessage, "Leitura concluída");
       showToast(qrValue ? "QR e texto da nota lidos. Revise os dados." : "Texto da nota lido. Revise os dados.");
     } catch (error) {
-      setProcessing(Math.max(20, highestProgress), error.message || "Não foi possível interpretar esta foto.", "Leitura incompleta", true);
-      showToast("Não foi possível interpretar a foto. Confira a conexão e tente outra imagem.");
+      const detail = error?.message || "Não foi possível interpretar esta foto.";
+      const panel = $("#processingPanel");
+      if (!panel.hidden) setProcessing(Math.max(20, highestProgress), detail, "Leitura incompleta", true);
+      showToast(detail);
     } finally {
       image?.cleanup?.();
       setTimeout(() => $("#storeInput").focus(), 80);
@@ -830,6 +963,44 @@
   function bindEvents() {
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPage(button.dataset.view)));
     $("#addReceiptButton").addEventListener("click", beginPurchaseCapture);
+    $("#uploadPhotoButton").addEventListener("click", () => $("#photoUploadInput").click());
+    $("#uploadReceiptButton").addEventListener("click", () => $("#receiptUploadInput").click());
+    $("#authForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!cloud.client) return;
+      const button = $("#authSubmit");
+      button.disabled = true;
+      $("#authStatus").textContent = "Entrando…";
+      try {
+        const { error } = await cloud.client.auth.signInWithPassword({ email: $("#authEmail").value.trim(), password: $("#authPassword").value });
+        if (error) $("#authStatus").textContent = "E-mail ou senha inválidos. Confira o convite e tente novamente.";
+      } catch (error) {
+        $("#authStatus").textContent = error.message || "Não foi possível entrar. Confira a conexão e tente novamente.";
+      } finally { button.disabled = false; }
+    });
+    $("#invitePasswordForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const password = $("#invitePassword").value;
+      const confirmPassword = $("#invitePasswordConfirm").value;
+      if (password.length < 8 || password !== confirmPassword) {
+        $("#invitePasswordStatus").textContent = password !== confirmPassword ? "As senhas não conferem." : "Use pelo menos 8 caracteres.";
+        return;
+      }
+      const button = $("#invitePasswordSubmit");
+      button.disabled = true;
+      $("#invitePasswordStatus").textContent = "Salvando senha…";
+      try {
+        const { data, error } = await cloud.client.auth.updateUser({ password });
+        if (error) throw error;
+        inviteFlow = false;
+        history.replaceState(null, "", `${location.pathname}#overview`);
+        $("#invitePasswordForm").reset();
+        await activateCloudUser(data.user);
+      } catch (error) {
+        $("#invitePasswordStatus").textContent = error.message || "Não foi possível definir a senha. Tente novamente.";
+      } finally { button.disabled = false; }
+    });
+    $("#signOutButton").addEventListener("click", async () => { await cloud.client?.auth.signOut(); });
     $("#photoUploadInput").addEventListener("change", (event) => {
       const file = event.target.files?.[0];
       event.target.value = "";
@@ -889,5 +1060,6 @@
   renderDashboard();
   const initialView = location.hash.slice(1);
   if (["overview", "receipts", "products"].includes(initialView)) setPage(initialView);
+  initCloudSync();
 })();
 
