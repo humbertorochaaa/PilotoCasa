@@ -4,9 +4,9 @@ Protótipo para acompanhar compras, consumo e reposição durante um piloto de 3
 
 ## Leitura das notas
 
-Em qualquer dispositivo, use **Usar foto** para selecionar uma foto nítida da nota. A imagem é ampliada e realçada antes do OCR; quando encontra o QR, o app usa sua posição para recortar a área da nota. **Ler QR** abre a câmera apenas para localizar o código; depois, use a foto para preencher mercado, data e itens. O QR identifica a consulta fiscal; os produtos e o estabelecimento são reconhecidos pelo texto da nota. Antes de preencher os itens, o app confere a quantidade lida e compara a soma dos produtos com o total impresso. Se a conta não bater, ele deixa os itens em branco para evitar salvar valores incorretos. No desktop, **Enviar PDF** procura o QR code nas primeiras dez páginas. Confira os campos reconhecidos antes de salvar.
+Em qualquer dispositivo, use **Ler QR** para consultar a NFC-e na SEFAZ-SP e importar loja, data, itens e total. A consulta automática usa uma Edge Function autenticada, aceita somente os endereços HTTPS da SEFAZ-SP e não guarda a página consultada. Se a consulta não disponibilizar a lista, use **Usar foto**: a imagem é ampliada e realçada antes do OCR; quando encontra o QR, o app usa sua posição para recortar a área da nota. Antes de preencher os itens pelo OCR, o app confere a quantidade lida e compara a soma dos produtos com o total impresso. Se a conta não bater, deixa os itens em branco para evitar valores incorretos. No desktop, **Enviar PDF** procura o QR code nas primeiras dez páginas. Confira os campos reconhecidos antes de salvar.
 
-As imagens são processadas no aparelho e não são enviadas nem guardadas. O OCR e a leitura de QR precisam de internet para carregar as bibliotecas; o progresso e qualquer falha aparecem no formulário.
+As imagens são processadas no aparelho e não são enviadas nem guardadas. Para a consulta automática, o link do QR é enviado à Edge Function autenticada, que consulta a página pública da SEFAZ-SP e retorna somente os campos da compra.
 
 ## Banco compartilhado, logins e administração
 
