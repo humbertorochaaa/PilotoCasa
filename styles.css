@@ -267,7 +267,7 @@ dialog { color: var(--ink); }
 .scanner-frame { position: relative; height: 240px; margin: 17px 25px 0; overflow: hidden; border-radius: 11px; background: #16281e; }
 .scanner-frame video { width: 100%; height: 100%; object-fit: cover; }
 .scan-guide { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-.scan-guide span { width: 150px; height: 150px; border: 2px solid rgba(217,245,138,.85); border-radius: 14px; box-shadow: 0 0 0 999px rgba(10,20,14,.19); }
+.scan-guide span { width: min(210px, 76%); height: 200px; border: 2px dashed rgba(217,245,138,.9); border-radius: 10px; box-shadow: 0 0 0 999px rgba(10,20,14,.19); }
 .scanner-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; background: linear-gradient(rgba(18,38,25,.2),rgba(18,38,25,.72)); }
 .scanner-placeholder.hidden { display: none; }
 .scanner-graphic { margin-bottom: 7px; color: var(--lime); font-size: 30px; }
