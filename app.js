@@ -601,34 +601,37 @@
   }
 
   async function openScanner() {
-    $("#scannerMessage").textContent = "A câmera é usada somente para ler o código nesta tela.";
+    $("#scannerMessage").textContent = "Afaste a câmera para mostrar a nota toda e mantenha o QR code visível.";
     $("#scannerPlaceholder").classList.remove("hidden");
     $("#scannerDialog").showModal();
   }
   async function startCamera() {
     const message = $("#scannerMessage");
     if (!("jsQR" in window) && !("BarcodeDetector" in window)) {
-      message.textContent = "A leitura pela câmera não está disponível neste navegador. Cole o link ou a chave no formulário.";
+      message.textContent = "A leitura pela câmera não está disponível. Use Usar foto para importar a nota.";
       showToast("Não foi possível carregar o leitor QR. Tente recarregar a página.");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      message.textContent = "A câmera exige uma conexão segura. Use localhost ou cole o link da nota no formulário.";
+      message.textContent = "A câmera exige uma conexão segura. Use Enviar foto para importar a nota.";
       return;
     }
     try {
       barcodeDetector = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
-      scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      scanStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
       const video = $("#scannerVideo");
       video.srcObject = scanStream;
       await video.play();
       $("#scannerPlaceholder").classList.add("hidden");
-      message.textContent = "Aponte a câmera para o QR code da nota.";
+      message.textContent = "Enquadre a nota inteira, com o QR visível, para ler também os produtos.";
       scanActive = true;
       lastScanAt = 0;
       scanFrame = requestAnimationFrame(scanLoop);
     } catch (error) {
-      message.textContent = error.name === "NotAllowedError" ? "A câmera não foi autorizada. Cole o link ou a chave no formulário." : "Não foi possível abrir a câmera. Tente ler uma imagem ou cole a chave.";
+      message.textContent = error.name === "NotAllowedError" ? "A câmera não foi autorizada. Use Usar foto para enviar a nota." : "Não foi possível abrir a câmera. Tente usar uma foto da nota.";
     }
   }
   async function scanLoop() {
@@ -639,7 +642,7 @@
       try {
         const result = await decodeImageSource(video);
         if (result) {
-          onQrRead(result);
+          await onQrRead(result);
           return;
         }
       } catch (error) { /* Keep scanning while the camera is active. */ }
@@ -665,11 +668,52 @@
     }
     return null;
   }
-  function onQrRead(value) {
-    applyQrValue(value);
+  function captureScannerFrame(video) {
+    const width = video?.videoWidth || 0;
+    const height = video?.videoHeight || 0;
+    if (!width || !height) return null;
+    const scale = Math.min(1, 2400 / Math.max(width, height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return null;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+  async function onQrRead(value) {
+    const frame = captureScannerFrame($("#scannerVideo"));
     stopScanner();
     $("#scannerDialog").close();
-    showToast(/\d{44}/.test(value) ? "Chave da nota lida. Confira e adicione os itens." : "QR code lido. Confira o link e adicione os itens.");
+    applyQrValue(value);
+    if (!frame) {
+      setProcessing(100, "QR lido. Use Usar foto para reconhecer o nome do mercado e os produtos.", "QR reconhecido", true);
+      return;
+    }
+    let highestProgress = 15;
+    try {
+      setProcessing(highestProgress, "QR lido. Lendo a nota inteira…", "Reconhecendo a nota");
+      const worker = await getOcrWorker((message) => {
+        highestProgress = Math.max(highestProgress, ocrProgressPercent(message));
+        setProcessing(highestProgress, ocrProgressLabel(message), "Reconhecendo a nota");
+      });
+      const result = await worker.recognize(frame);
+      const parsed = applyOcrReceipt(result.data.text, value);
+      if (parsed.items.length) {
+        setProcessing(100, `${parsed.items.length} produtos reconhecidos. Confira loja, data e itens antes de salvar.`, "Leitura concluída");
+        showToast(`${parsed.items.length} produtos reconhecidos. Confira os dados da nota.`);
+      } else {
+        setProcessing(100, "O QR foi lido, mas a câmera não enquadrou os itens. Use Usar foto para enviar uma imagem da nota inteira.", "QR reconhecido", true);
+        showToast("QR lido. Para importar os produtos, enquadre a nota inteira ou use Usar foto.");
+      }
+    } catch (error) {
+      const detail = error?.message || "Não foi possível reconhecer o texto da nota pela câmera.";
+      setProcessing(100, `${detail} Use Usar foto para tentar novamente.`, "QR reconhecido", true);
+      showToast("QR lido; use Usar foto para preencher a compra automaticamente.");
+    } finally {
+      frame.width = 0;
+      frame.height = 0;
+    }
   }
   function applyQrValue(value) {
     $("#qrInput").value = value;
@@ -916,11 +960,13 @@
     let image = null;
     let highestProgress = 20;
     try {
-      openReceipt("", false);
+      const receiptDialogOpen = $("#receiptDialog").open;
+      const previousQrValue = receiptDialogOpen ? $("#qrInput").value.trim() : "";
+      if (!receiptDialogOpen) openReceipt("", false);
       setProcessing(2, "Abrindo a foto…");
       image = await imageFileToCanvas(file);
       setProcessing(12, "Procurando o QR code…");
-      const qrValue = await decodeImageSource(image.canvas);
+      const qrValue = await decodeImageSource(image.canvas) || previousQrValue;
       if (qrValue) applyQrValue(qrValue);
       setProcessing(20, "Carregando o leitor de texto…");
       const worker = await getOcrWorker((message) => {
@@ -1035,6 +1081,7 @@
       event.target.value = "";
       if (file) handlePhotoUpload(file);
     });
+    $("#uploadPhotoFromReceipt").addEventListener("click", () => $("#photoUploadInput").click());
     $("#receiptUploadInput").addEventListener("change", (event) => {
       const file = event.target.files?.[0];
       event.target.value = "";
