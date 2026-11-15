@@ -166,7 +166,7 @@
           <label class="field"><span>Data da compra</span><input id="dateInput" type="date" required /></label>
         </div>
         <div class="qr-field">
-          <div class="qr-field-copy"><span class="qr-small-icon">▦</span><div><strong>QR e leitura da nota</strong><small>O QR identifica a consulta. Use uma foto nítida para preencher os itens.</small></div></div>
+          <div class="qr-field-copy"><span class="qr-small-icon">▦</span><div><strong>QR e leitura da nota</strong><small>Vamos buscar os itens na SEFAZ; se não der, use uma foto nítida.</small></div></div>
           <div class="qr-actions"><button class="button button-outline button-small" id="openQrScanner" type="button">Ler QR</button><button class="button button-outline button-small" id="uploadPhotoFromReceipt" type="button">Usar foto</button><input id="qrInput" type="text" placeholder="Link ou chave de acesso (opcional)" aria-label="Link ou chave de acesso da nota" /><button class="button-link" type="button" id="openConsultation" hidden>Abrir consulta ↗</button></div>
         </div>
         <div class="processing-panel" id="processingPanel" hidden aria-live="polite">
@@ -177,9 +177,10 @@
         <div class="items-heading"><div><p class="section-kicker">ITENS DA NOTA</p><h3>O que vocês compraram?</h3></div><button class="button button-outline button-small" id="addItemButton" type="button">＋ Adicionar item</button></div>
         <div class="item-column-labels"><span>PRODUTO</span><span>QTD.</span><span>UNIDADE</span><span>PREÇO TOTAL</span><span></span></div>
         <div id="itemRows" class="item-rows"></div>
+        <input id="receiptTotalOverride" type="hidden" />
         <div class="dialog-total"><span>Total desta compra</span><strong id="receiptTotal">R$ 0,00</strong></div>
         <div class="dialog-footer"><button class="button button-quiet" type="button" data-close-dialog>Cancelar</button><button class="button button-primary" type="submit">Salvar compra <span>→</span></button></div>
-        <p class="privacy-note"><span>🔒</span> Fotos e PDFs são processados no navegador. Os dados salvos ficam apenas neste navegador. Não inclua CPF no campo do QR code.</p>
+        <p class="privacy-note"><span>🔒</span> Fotos e PDFs são processados no navegador. O QR consulta a SEFAZ e retorna os itens, loja e total. Não inclua CPF manualmente.</p>
       </form>
     </dialog>
 
@@ -212,7 +213,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=beta-crud-2"></script>
-    <script src="app.js?v=beta-ocr-photo-enhance-7"></script>
+    <script src="app.js?v=beta-nfce-import-8"></script>
   </body>
 </html>
 
