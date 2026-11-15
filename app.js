@@ -21,6 +21,8 @@
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   document.documentElement.classList.toggle("mobile-device", isMobileDevice);
   let state = loadState();
+  let selectedDashboardMonth = state.receipts.map((receipt) => receipt.date?.slice(0, 7)).filter((month) => /^\d{4}-\d{2}$/.test(month || "")).sort().at(-1) || today.slice(0, 7);
+  let cloudMonthInitialized = false;
   const cloud = { client: null, user: null, householdId: null, role: null, ready: false, saveChain: Promise.resolve(), channel: null };
   let inviteFlow = new URLSearchParams(location.hash.slice(1)).get("type") === "invite"
     || new URLSearchParams(location.search).get("flow") === "invite";
@@ -103,6 +105,10 @@
   }
   async function activateCloudUser(user) {
     if (!cloud.client || !user) return;
+    if (user.user_metadata?.must_change_password === true) {
+      promptInvitePassword(user);
+      return;
+    }
     try {
       const { data: membership, error: membershipError } = await cloud.client.from("household_members")
         .select("household_id, role").eq("user_id", user.id).maybeSingle();
@@ -125,6 +131,11 @@
       cloud.householdId = membership.household_id;
       cloud.role = membership.role;
       state = { pilotStart: sharedState.pilotStart || today, pilotDays: PILOT_DAYS, receipts: sharedState.receipts };
+      if (!cloudMonthInitialized) {
+        selectedDashboardMonth = state.receipts.map((receipt) => receipt.date?.slice(0, 7))
+          .filter((month) => /^\d{4}-\d{2}$/.test(month || "")).sort().at(-1) || today.slice(0, 7);
+        cloudMonthInitialized = true;
+      }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       cloud.ready = true;
       $("#storageStatus").textContent = "Compras sincronizadas entre participantes.";
@@ -141,7 +152,7 @@
           event: "UPDATE", schema: "public", table: "household_state",
           filter: `household_id=eq.${cloud.householdId}`
         }, (payload) => {
-          if (payload.new.updated_by === cloud.user.id || !Array.isArray(payload.new.state?.receipts)) return;
+          if (!Array.isArray(payload.new.state?.receipts)) return;
           state = { pilotStart: payload.new.state.pilotStart || today, pilotDays: PILOT_DAYS, receipts: payload.new.state.receipts };
           localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
           renderDashboard();
@@ -288,32 +299,44 @@
   }
   function renderDashboard() {
     updatePilotProgress();
-    const month = today.slice(0, 7);
-    const monthReceipts = state.receipts.filter((receipt) => receipt.date?.startsWith(month));
+    const availableMonths = new Set([today.slice(0, 7), selectedDashboardMonth]);
+    state.receipts.forEach((receipt) => {
+      const month = receipt.date?.slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(month || "")) availableMonths.add(month);
+    });
+    const months = [...availableMonths].sort((a, b) => b.localeCompare(a));
+    $("#monthTag").innerHTML = months.map((month) => {
+      const [year, number] = month.split("-").map(Number);
+      const label = new Date(year, number - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      return `<option value="${month}">${escapeHtml(label)}</option>`;
+    }).join("");
+    $("#monthTag").value = selectedDashboardMonth;
+    const monthReceipts = state.receipts.filter((receipt) => receipt.date?.startsWith(selectedDashboardMonth));
     const monthTotal = monthReceipts.reduce((sum, receipt) => sum + receiptTotal(receipt), 0);
     const monthStores = new Set(monthReceipts.map((receipt) => normalizeName(receipt.store)).filter(Boolean));
     const products = allProductRecords();
     const recurring = products.filter((product) => product.purchaseCount > 1);
-    $("#monthTag").textContent = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
     $("#statSpend").textContent = money(monthTotal);
     $("#statSpendNote").textContent = `${monthReceipts.length} ${monthReceipts.length === 1 ? "nota no mês" : "notas no mês"}`;
     $("#statReceipts").textContent = String(monthReceipts.length);
     $("#statRecurring").textContent = String(recurring.length);
     $("#statStores").textContent = String(monthStores.size);
     $("#navReceiptCount").textContent = String(state.receipts.length);
-    renderWeeklyChart();
+    renderWeeklyChart(selectedDashboardMonth);
     renderCategoryChart(monthReceipts);
     renderRecurring(recurring);
     renderStoreComparison(products);
     renderRecentReceipts();
   }
-  function renderWeeklyChart() {
-    const start = dateFromString(state.pilotStart);
+  function renderWeeklyChart(month) {
+    const monthStart = `${month}-01`;
+    const start = dateFromString(monthStart);
+    const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
     const weeks = Array.from({ length: 5 }, (_, index) => ({ index, total: 0, count: 0, start: new Date(start.getTime() + index * 7 * 86400000) }));
-    state.receipts.forEach((receipt) => {
-      const offset = dateDiff(state.pilotStart, receipt.date);
+    state.receipts.filter((receipt) => receipt.date?.startsWith(month)).forEach((receipt) => {
+      const offset = dateDiff(monthStart, receipt.date);
       const weekIndex = Math.floor(offset / 7);
-      if (weekIndex >= 0 && weekIndex < weeks.length && offset < PILOT_DAYS) {
+      if (weekIndex >= 0 && weekIndex < weeks.length && offset < daysInMonth) {
         weeks[weekIndex].total += receiptTotal(receipt);
         weeks[weekIndex].count += 1;
       }
@@ -534,6 +557,7 @@
       items,
       createdAt: existing?.createdAt || new Date().toISOString()
     };
+    selectedDashboardMonth = receipt.date.slice(0, 7);
     if (existing) state.receipts = state.receipts.map((entry) => entry.id === id ? receipt : entry);
     else state.receipts.push(receipt);
     saveState();
@@ -990,7 +1014,12 @@
       button.disabled = true;
       $("#invitePasswordStatus").textContent = "Salvando senha…";
       try {
-        const { data, error } = await cloud.client.auth.updateUser({ password });
+        const { data: current, error: currentError } = await cloud.client.auth.getUser();
+        if (currentError) throw currentError;
+        const { data, error } = await cloud.client.auth.updateUser({
+          password,
+          data: { ...(current.user?.user_metadata || {}), must_change_password: false }
+        });
         if (error) throw error;
         inviteFlow = false;
         history.replaceState(null, "", `${location.pathname}#overview`);
@@ -1050,6 +1079,10 @@
     $("#receiptDialog").addEventListener("click", (event) => { if (event.target === $("#receiptDialog")) $("#receiptDialog").close(); });
     $("#scannerDialog").addEventListener("click", (event) => { if (event.target === $("#scannerDialog")) { stopScanner(); $("#scannerDialog").close(); } });
     $("#receiptSearch").addEventListener("input", renderAllReceipts);
+    $("#monthTag").addEventListener("change", (event) => {
+      selectedDashboardMonth = event.target.value;
+      renderDashboard();
+    });
     $("#exportButton").addEventListener("click", exportData);
     document.addEventListener("click", handleActions);
     window.addEventListener("hashchange", () => setPage(location.hash.slice(1)));
