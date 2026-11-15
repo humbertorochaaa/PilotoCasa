@@ -19,6 +19,9 @@
   let scanActive = false;
   let scanFrame = 0;
   let barcodeDetector = null;
+  let lastScanAt = 0;
+  const scanCanvas = document.createElement("canvas");
+  const scanContext = scanCanvas.getContext("2d", { willReadFrequently: true });
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -306,7 +309,7 @@
     $("#openConsultation").hidden = true;
     addItemRow();
   }
-  function openReceipt(id = "") {
+  function openReceipt(id = "", focusStore = true) {
     resetForm();
     if (id) {
       const receipt = state.receipts.find((entry) => entry.id === id);
@@ -323,7 +326,7 @@
       updateConsultationLink();
     }
     $("#receiptDialog").showModal();
-    setTimeout(() => $("#storeInput").focus(), 80);
+    if (focusStore) setTimeout(() => $("#storeInput").focus(), 80);
   }
   function updateConsultationLink() {
     const raw = $("#qrInput").value.trim();
@@ -420,9 +423,9 @@
   }
   async function startCamera() {
     const message = $("#scannerMessage");
-    if (!("BarcodeDetector" in window)) {
+    if (!("jsQR" in window) && !("BarcodeDetector" in window)) {
       message.textContent = "A leitura pela câmera não está disponível neste navegador. Cole o link ou a chave no formulário.";
-      showToast("Leitor QR indisponível neste navegador.");
+      showToast("Não foi possível carregar o leitor QR. Tente recarregar a página.");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -430,7 +433,7 @@
       return;
     }
     try {
-      barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] });
+      barcodeDetector = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
       scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
       const video = $("#scannerVideo");
       video.srcObject = scanStream;
@@ -438,6 +441,7 @@
       $("#scannerPlaceholder").classList.add("hidden");
       message.textContent = "Aponte a câmera para o QR code da nota.";
       scanActive = true;
+      lastScanAt = 0;
       scanFrame = requestAnimationFrame(scanLoop);
     } catch (error) {
       message.textContent = error.name === "NotAllowedError" ? "A câmera não foi autorizada. Cole o link ou a chave no formulário." : "Não foi possível abrir a câmera. Tente ler uma imagem ou cole a chave.";
@@ -446,16 +450,36 @@
   async function scanLoop() {
     if (!scanActive) return;
     const video = $("#scannerVideo");
-    if (video.readyState >= 2 && barcodeDetector) {
+    if (video.readyState >= 2 && performance.now() - lastScanAt > 140) {
+      lastScanAt = performance.now();
       try {
-        const results = await barcodeDetector.detect(video);
-        if (results.length) {
-          onQrRead(results[0].rawValue);
+        const result = await decodeImageSource(video);
+        if (result) {
+          onQrRead(result);
           return;
         }
-      } catch (error) { /* Continue trying while the camera is active. */ }
+      } catch (error) { /* Keep scanning while the camera is active. */ }
     }
     scanFrame = requestAnimationFrame(scanLoop);
+  }
+  async function decodeImageSource(source) {
+    const width = source.videoWidth || source.naturalWidth || source.width;
+    const height = source.videoHeight || source.naturalHeight || source.height;
+    if (!width || !height || !scanContext) return null;
+    const scale = Math.min(1, 800 / Math.max(width, height));
+    scanCanvas.width = Math.max(1, Math.round(width * scale));
+    scanCanvas.height = Math.max(1, Math.round(height * scale));
+    scanContext.drawImage(source, 0, 0, scanCanvas.width, scanCanvas.height);
+    if (window.jsQR) {
+      const imageData = scanContext.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+      const result = window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+      if (result?.data) return result.data;
+    }
+    if (barcodeDetector) {
+      const results = await barcodeDetector.detect(scanCanvas);
+      if (results.length) return results[0].rawValue;
+    }
+    return null;
   }
   function onQrRead(value) {
     $("#qrInput").value = value;
@@ -475,25 +499,43 @@
   }
   async function readQrImage(file) {
     const message = $("#scannerMessage");
-    if (!("BarcodeDetector" in window)) {
+    if (!("jsQR" in window) && !("BarcodeDetector" in window)) {
       message.textContent = "A leitura de imagem não está disponível neste navegador. Tente pela câmera ou cole a chave.";
       return;
     }
+    let source = null;
+    let objectUrl = "";
     try {
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
-      const bitmap = await createImageBitmap(file);
-      const result = await detector.detect(bitmap);
-      bitmap.close?.();
-      if (result.length) onQrRead(result[0].rawValue);
+      if (window.createImageBitmap) source = await createImageBitmap(file);
+      else {
+        objectUrl = URL.createObjectURL(file);
+        source = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = objectUrl;
+        });
+      }
+      const result = await decodeImageSource(source);
+      if (result) onQrRead(result);
       else message.textContent = "Não encontramos um QR code nessa imagem. Tente uma foto mais nítida.";
     } catch (error) {
       message.textContent = "Não foi possível ler essa imagem. Tente a câmera ou cole o link da nota.";
+    } finally {
+      source?.close?.();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
+  }
+
+  function beginPurchaseCapture() {
+    openReceipt("", false);
+    openScanner();
+    startCamera();
   }
 
   function bindEvents() {
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPage(button.dataset.view)));
-    $("#addReceiptButton").addEventListener("click", () => openReceipt());
+    $("#addReceiptButton").addEventListener("click", beginPurchaseCapture);
     $("#receiptForm").addEventListener("submit", handleReceiptSubmit);
     $("#addItemButton").addEventListener("click", () => addItemRow());
     $("#itemRows").addEventListener("input", (event) => {
