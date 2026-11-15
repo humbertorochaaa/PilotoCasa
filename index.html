@@ -48,6 +48,7 @@
           </div>
           <div class="top-actions">
             <span class="today-pill" id="todayLabel"></span>
+            <button class="button button-outline" id="uploadReceiptButton" type="button"><span class="upload-icon">↑</span> Enviar foto</button>
             <button class="button button-primary" id="addReceiptButton" type="button"><span class="plus">▦</span> Escanear nota</button>
           </div>
         </header>
@@ -179,6 +180,7 @@
       <div class="scanner-actions"><button class="button button-primary" id="startScannerButton" type="button">Abrir câmera</button><label class="button button-outline upload-qr-button">Ler uma imagem<input id="qrImageInput" type="file" accept="image/*" capture="environment" /></label></div>
       <p class="scanner-fallback">Se preferir, feche esta janela e cole o link ou a chave de acesso no formulário.</p>
     </dialog>
+    <input id="receiptUploadInput" type="file" accept="image/*" hidden aria-label="Escolher foto ou imagem da nota" />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" crossorigin="anonymous"></script>
     <script src="app.js"></script>
