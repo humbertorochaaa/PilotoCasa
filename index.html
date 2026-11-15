@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173d30" />
+    <meta name="description" content="Acompanhe as compras do mercado e o ritmo de reposição da sua casa." />
+    <title>Despensa — piloto da casa</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Menu principal">
+        <a class="brand" href="#overview" aria-label="Despensa, visão geral">
+          <span class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none"><path d="M5.5 13.5h21l-2.1 13H7.6l-2.1-13Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m10 13.5 3-8m9 8-3-8M5.5 17h21M12 18v5m8-5v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </span>
+          <span class="brand-name">despensa<span>.</span></span>
+        </a>
+
+        <div class="side-label">SUA CASA</div>
+        <nav class="nav-list">
+          <button class="nav-item active" data-view="overview" type="button"><span class="nav-icon">◫</span> Visão geral</button>
+          <button class="nav-item" data-view="receipts" type="button"><span class="nav-icon">▤</span> Compras e notas <span class="nav-count" id="navReceiptCount">0</span></button>
+          <button class="nav-item" data-view="products" type="button"><span class="nav-icon">⌁</span> Produtos</button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="pilot-mini">
+            <div class="pilot-mini-top"><span class="pulse-dot"></span><span>PILOTO EM ANDAMENTO</span></div>
+            <strong id="sidePilotDay">Dia 1 de 35</strong>
+            <div class="mini-progress"><span id="sideProgressBar"></span></div>
+            <small>Seus dados ficam neste navegador.</small>
+          </div>
+          <button class="export-button" id="exportButton" type="button"><span>↓</span> Baixar meus dados</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-dot"></span> PILOTO DA CASA <span class="eyebrow-divider">/</span> 35 DIAS</p>
+            <h1 id="pageTitle">Visão geral</h1>
+            <p class="page-subtitle" id="pageSubtitle">Um retrato simples das compras e da rotina da casa.</p>
+          </div>
+          <div class="top-actions">
+            <span class="today-pill" id="todayLabel"></span>
+            <button class="button button-primary" id="addReceiptButton" type="button"><span class="plus">＋</span> Adicionar compra</button>
+          </div>
+        </header>
+
+        <section class="view-section active" id="view-overview" aria-labelledby="pageTitle">
+          <div class="pilot-banner">
+            <div class="pilot-banner-copy">
+              <div class="banner-kicker"><span class="banner-spark">✳</span> EXPERIÊNCIA DE 35 DIAS</div>
+              <h2>Pequenos registros.<br /><em>Mais clareza</em> na rotina.</h2>
+              <p>Registrem as compras conforme acontecem. O histórico vai mostrando o ritmo da casa.</p>
+            </div>
+            <div class="pilot-timeline">
+              <div class="timeline-head"><span>SEU PILOTO</span><strong id="pilotDayLabel">Dia 1 <i>de 35</i></strong></div>
+              <div class="timeline-track"><span id="pilotProgressBar"></span><b class="timeline-marker" id="pilotMarker"></b></div>
+              <div class="timeline-foot"><span id="pilotStartLabel">Começou hoje</span><span id="pilotRemainingLabel">35 dias restantes</span></div>
+            </div>
+            <div class="banner-decoration" aria-hidden="true"><span class="deco-circle"></span><span class="deco-leaf">✳</span></div>
+          </div>
+
+          <div class="section-heading">
+            <div><p class="section-kicker">ACOMPANHAMENTO DA CASA</p><h2>O retrato deste mês</h2></div>
+            <span class="month-tag" id="monthTag"></span>
+          </div>
+
+          <div class="stat-grid">
+            <article class="stat-card stat-spend">
+              <div class="stat-top"><span class="stat-label">Gasto registrado</span><span class="stat-icon icon-green">R$</span></div>
+              <strong class="stat-value" id="statSpend">R$ 0,00</strong>
+              <div class="stat-foot"><span class="stat-note" id="statSpendNote">Este mês</span><span class="stat-arrow">↗</span></div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-top"><span class="stat-label">Compras registradas</span><span class="stat-icon icon-yellow">▤</span></div>
+              <strong class="stat-value" id="statReceipts">0</strong>
+              <div class="stat-foot"><span class="stat-note">Notas adicionadas</span><span class="stat-arrow">↗</span></div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-top"><span class="stat-label">Itens recorrentes</span><span class="stat-icon icon-lilac">⟳</span></div>
+              <strong class="stat-value" id="statRecurring">0</strong>
+              <div class="stat-foot"><span class="stat-note">Comprados mais de uma vez</span><span class="stat-arrow">↗</span></div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-top"><span class="stat-label">Mercados visitados</span><span class="stat-icon icon-peach">⌖</span></div>
+              <strong class="stat-value" id="statStores">0</strong>
+              <div class="stat-foot"><span class="stat-note">Neste mês</span><span class="stat-arrow">↗</span></div>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel spending-panel">
+              <div class="panel-heading"><div><p class="section-kicker">VISÃO DO PERÍODO</p><h3>Compras ao longo do piloto</h3></div><span class="panel-caption">Por semana</span></div>
+              <div class="chart-summary"><strong id="chartTotal">R$ 0,00</strong><span>total registrado</span></div>
+              <div class="bar-chart" id="weeklyChart" aria-label="Gastos por semana"></div>
+              <div class="chart-legend"><span><i></i> Valor das notas registradas</span><span id="chartReceiptCount">0 compras</span></div>
+            </article>
+
+            <article class="panel category-panel">
+              <div class="panel-heading"><div><p class="section-kicker">PARA ONDE VAI</p><h3>Compras por categoria</h3></div><button class="text-button" data-goto="products" type="button">Ver produtos <span>→</span></button></div>
+              <div class="category-content" id="categoryContent"></div>
+            </article>
+
+            <article class="panel recurring-panel">
+              <div class="panel-heading"><div><p class="section-kicker">RITMO DA CASA</p><h3>Reposição observada</h3></div><span class="info-dot" title="Estimativa baseada no intervalo entre compras repetidas.">i</span></div>
+              <p class="panel-intro">Quando um item aparece de novo, calculamos o intervalo entre as compras.</p>
+              <div id="recurringList" class="recurring-list"></div>
+              <button class="panel-bottom-link" data-goto="products" type="button">Acompanhar todos os produtos <span>→</span></button>
+            </article>
+
+            <article class="panel store-panel">
+              <div class="panel-heading"><div><p class="section-kicker">HISTÓRICO DE PREÇOS</p><h3>Onde saiu melhor?</h3></div><span class="info-dot" title="Compara o mesmo produto pelo preço por unidade, quando possível.">i</span></div>
+              <p class="panel-intro">Comparação entre os mercados das suas notas.</p>
+              <div id="storeCompare" class="store-compare"></div>
+              <button class="panel-bottom-link" data-goto="products" type="button">Ver preços por produto <span>→</span></button>
+            </article>
+          </div>
+
+          <section class="panel recent-panel">
+            <div class="panel-heading"><div><p class="section-kicker">ÚLTIMOS REGISTROS</p><h3>Compras recentes</h3></div><button class="text-button" data-goto="receipts" type="button">Ver todas <span>→</span></button></div>
+            <div id="recentReceipts" class="receipt-list"></div>
+          </section>
+          <p class="footnote"><span>✳</span> O intervalo de reposição é uma estimativa baseada nas datas das compras registradas.</p>
+        </section>
+
+        <section class="view-section" id="view-receipts">
+          <div class="section-heading page-section-heading"><div><p class="section-kicker">HISTÓRICO DA CASA</p><h2>Compras e notas</h2><p class="section-description">Cada nota ajuda a completar o retrato das compras.</p></div></div>
+          <div class="list-toolbar"><label class="search-box"><span>⌕</span><input id="receiptSearch" type="search" placeholder="Buscar mercado ou produto" /></label><span class="toolbar-count" id="receiptListCount">0 compras</span></div>
+          <div id="allReceipts" class="all-receipts"></div>
+          <div class="capture-tip"><span class="tip-icon">✳</span><div><strong>Uma dica para o piloto</strong><p>Registrem cada compra no mesmo dia. Para acompanhar a reposição, usem o mesmo nome para o mesmo produto, como “carne moída”.</p></div></div>
+        </section>
+
+        <section class="view-section" id="view-products">
+          <div class="section-heading page-section-heading"><div><p class="section-kicker">O QUE ENTRA EM CASA</p><h2>Produtos</h2><p class="section-description">Preços e intervalos observados nas compras registradas.</p></div></div>
+          <div class="product-summary-grid" id="productSummary"></div>
+          <article class="panel product-table-panel">
+            <div class="panel-heading"><div><p class="section-kicker">HISTÓRICO POR ITEM</p><h3>Seus produtos</h3></div><span class="panel-caption" id="productCountLabel">0 produtos</span></div>
+            <div class="table-scroll"><table class="product-table"><thead><tr><th>PRODUTO</th><th>COMPRAS</th><th>INTERVALO</th><th>ÚLTIMO PREÇO</th><th>MELHOR MERCADO</th></tr></thead><tbody id="productTableBody"></tbody></table></div>
+          </article>
+          <p class="footnote"><span>✳</span> O sistema agrupa pelo nome do produto. Ajuste a descrição nas notas para acompanhar variações do mesmo item.</p>
+        </section>
+        <footer class="app-footer"><span>DESPENSA · PILOTO DA CASA</span><span>Feito para entender a rotina, compra por compra.</span></footer>
+      </main>
+    </div>
+
+    <dialog class="receipt-dialog" id="receiptDialog" aria-labelledby="receiptDialogTitle">
+      <form id="receiptForm" method="dialog">
+        <div class="dialog-head"><div><p class="section-kicker">REGISTRO DA CASA</p><h2 id="receiptDialogTitle">Adicionar compra</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="Fechar">×</button></div>
+        <input type="hidden" id="receiptId" />
+        <div class="form-grid">
+          <label class="field"><span>Mercado</span><input id="storeInput" required maxlength="80" placeholder="Ex.: Assaí, mercado do bairro" /></label>
+          <label class="field"><span>Cidade ou região <small>opcional</small></span><input id="cityInput" maxlength="80" placeholder="Ex.: Campinas, Taquaral" /></label>
+          <label class="field"><span>Data da compra</span><input id="dateInput" type="date" required /></label>
+        </div>
+        <div class="qr-field">
+          <div class="qr-field-copy"><span class="qr-small-icon">▦</span><div><strong>QR code da nota</strong><small>O QR guarda a chave; confira e lance os itens abaixo.</small></div></div>
+          <div class="qr-actions"><button class="button button-outline button-small" id="openQrScanner" type="button">Ler QR code</button><input id="qrInput" type="text" placeholder="Link ou chave de acesso (opcional)" aria-label="Link ou chave de acesso da nota" /><button class="button-link" type="button" id="openConsultation" hidden>Abrir consulta ↗</button></div>
+        </div>
+        <div class="items-heading"><div><p class="section-kicker">ITENS DA NOTA</p><h3>O que vocês compraram?</h3></div><button class="button button-outline button-small" id="addItemButton" type="button">＋ Adicionar item</button></div>
+        <div class="item-column-labels"><span>PRODUTO</span><span>QTD.</span><span>UNIDADE</span><span>PREÇO TOTAL</span><span></span></div>
+        <div id="itemRows" class="item-rows"></div>
+        <div class="dialog-total"><span>Total desta compra</span><strong id="receiptTotal">R$ 0,00</strong></div>
+        <div class="dialog-footer"><button class="button button-quiet" type="button" data-close-dialog>Cancelar</button><button class="button button-primary" type="submit">Salvar compra <span>→</span></button></div>
+        <p class="privacy-note"><span>🔒</span> As informações ficam salvas apenas neste navegador. Não inclua CPF no campo do QR code.</p>
+      </form>
+    </dialog>
+
+    <dialog class="scanner-dialog" id="scannerDialog" aria-labelledby="scannerTitle">
+      <div class="dialog-head"><div><p class="section-kicker">LEITURA DA NOTA</p><h2 id="scannerTitle">Ler QR code</h2></div><button class="icon-button" type="button" data-close-scanner aria-label="Fechar">×</button></div>
+      <div class="scanner-frame"><video id="scannerVideo" playsinline muted></video><div class="scan-guide"><span></span></div><div class="scanner-placeholder" id="scannerPlaceholder"><div class="scanner-graphic">▦</div><strong>Aponte para o QR code</strong><p>Enquadre o código impresso na nota fiscal.</p></div></div>
+      <p class="scanner-message" id="scannerMessage">A câmera é usada somente para ler o código nesta tela.</p>
+      <div class="scanner-actions"><button class="button button-primary" id="startScannerButton" type="button">Abrir câmera</button><label class="button button-outline upload-qr-button">Ler uma imagem<input id="qrImageInput" type="file" accept="image/*" /></label></div>
+      <p class="scanner-fallback">Se preferir, feche esta janela e cole o link ou a chave de acesso no formulário.</p>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
+
