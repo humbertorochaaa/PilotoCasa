@@ -1,3 +1,6 @@
 [functions.admin-create-user]
 verify_jwt = true
 
+[functions.nfce-lookup]
+verify_jwt = true
+
