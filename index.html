@@ -48,7 +48,7 @@
           </div>
           <div class="top-actions">
             <span class="today-pill" id="todayLabel"></span>
-            <button class="button button-primary" id="addReceiptButton" type="button"><span class="plus">＋</span> Adicionar compra</button>
+            <button class="button button-primary" id="addReceiptButton" type="button"><span class="plus">▦</span> Escanear nota</button>
           </div>
         </header>
 
@@ -176,10 +176,11 @@
       <div class="dialog-head"><div><p class="section-kicker">LEITURA DA NOTA</p><h2 id="scannerTitle">Ler QR code</h2></div><button class="icon-button" type="button" data-close-scanner aria-label="Fechar">×</button></div>
       <div class="scanner-frame"><video id="scannerVideo" playsinline muted></video><div class="scan-guide"><span></span></div><div class="scanner-placeholder" id="scannerPlaceholder"><div class="scanner-graphic">▦</div><strong>Aponte para o QR code</strong><p>Enquadre o código impresso na nota fiscal.</p></div></div>
       <p class="scanner-message" id="scannerMessage">A câmera é usada somente para ler o código nesta tela.</p>
-      <div class="scanner-actions"><button class="button button-primary" id="startScannerButton" type="button">Abrir câmera</button><label class="button button-outline upload-qr-button">Ler uma imagem<input id="qrImageInput" type="file" accept="image/*" /></label></div>
+      <div class="scanner-actions"><button class="button button-primary" id="startScannerButton" type="button">Abrir câmera</button><label class="button button-outline upload-qr-button">Ler uma imagem<input id="qrImageInput" type="file" accept="image/*" capture="environment" /></label></div>
       <p class="scanner-fallback">Se preferir, feche esta janela e cole o link ou a chave de acesso no formulário.</p>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" crossorigin="anonymous"></script>
     <script src="app.js"></script>
   </body>
 </html>
